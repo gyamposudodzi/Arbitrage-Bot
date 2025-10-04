@@ -1,0 +1,17 @@
+arbitrage_bot/
+├── main.py
+├── config.json
+├── requirements.txt
+├── exchanges/
+│   ├── __init__.py
+│   ├── base_exchange.py
+│   ├── binance_api.py
+│   └── coinbase_api.py
+│   └── kraken_api.py
+├── core/
+│   ├── __init__.py
+│   ├── arbitrage_bot.py
+│   └── arbitrage_engine.py
+└── models/
+    ├── __init__.py
+    └── data_models.py

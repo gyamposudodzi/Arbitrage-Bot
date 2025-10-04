@@ -1,0 +1,29 @@
+{
+  "exchanges": {
+    "binance": {
+      "enabled": true,
+      "api_key": "6HbxsuJq3X4bqf7nl01zeDOG2v2Q69K41eJ4pXwoGbyPInSe6pxhakd3Uvj5hTQV",
+      "api_secret": "Me307pBNCprWM9cd8gfZNenVPBXg3SPZO0KWj0apJEcPb4ve5aAAItFRiUZhGoNR"
+    },
+    "coinbase": {
+      "enabled": true,
+      "api_key": "your_coinbase_api_key",
+      "api_secret": "your_coinbase_api_secret"
+    },
+    "kraken": {
+      "enabled": true,
+      "api_key": "your_kraken_api_key",
+      "api_secret": "your_kraken_api_secret"
+    }
+  },
+  "trading_pairs": [
+    "BTC-USDT",
+    "ETH-USDT",
+    "ADA-USDT",
+    "DOT-USDT",
+    "LINK-USDT"
+  ],
+  "min_spread_percentage": 0.5,
+  "update_interval": 5,
+  "max_opportunities": 10
+}
