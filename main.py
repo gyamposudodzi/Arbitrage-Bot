@@ -17,9 +17,9 @@ def create_config_template():
                 "api_secret": "your_coinbase_api_secret"
             },
             "kraken": {
-                "enabled": False,
-                "api_key": "your_kraken_api_key",
-                "api_secret": "your_kraken_api_secret"
+                "enabled": True,
+                "api_key": "pOVCGSomEdlE//5tgec1MC8nhXd85g3e8fIc2h0bExmQw42MT8NaFUHU",
+                "api_secret": "hasrr0/XnBDl920XTr/tKvkVgiSmDaPrZdiVTkDWF8p1/s0pOe2V6FPA0DnVBA0FAbP9NnEXxEn/6S/NHxj91w=="
             }
         },
         "trading_pairs": ["BTC-USDT", "ETH-USDT", "ADA-USDT", "DOT-USDT", "LINK-USDT"],

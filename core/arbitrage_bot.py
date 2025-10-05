@@ -72,13 +72,17 @@ class ArbitrageBot:
             print("Press Ctrl+C to stop gracefully...")
             
             binance = self.exchanges["binance"]
+            kraken = self.exchanges["kraken"]
             
             try:
                 while True:
                     prices = await binance.get_prices(self.config["trading_pairs"])
+                    pricess = await kraken.get_prices(self.config["trading_pairs"])
                     print(f"\n{time.strftime('%H:%M:%S')} - Binance Prices:")
                     for pair, price in prices.items():
                         print(f"  {pair}: ${price:.4f}")
+                    for pair, price in pricess.items():
+                        print(f"  {pair}: ${price:.4f}")    
                     
                     # SIMPLE sleep that can be interrupted by Ctrl+C
                     try:
