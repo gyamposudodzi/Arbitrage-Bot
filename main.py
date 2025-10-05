@@ -20,7 +20,29 @@ def create_config_template():
                 "enabled": True,
                 "api_key": "pOVCGSomEdlE//5tgec1MC8nhXd85g3e8fIc2h0bExmQw42MT8NaFUHU",
                 "api_secret": "hasrr0/XnBDl920XTr/tKvkVgiSmDaPrZdiVTkDWF8p1/s0pOe2V6FPA0DnVBA0FAbP9NnEXxEn/6S/NHxj91w=="
-            }
+            },
+            "kucoin": {
+                "enabled": True,
+                "api_key": "68e1b47997abe30001b0b09e",
+                "api_secret": "dcfa0f53-4a6c-4912-bc60-e21fcbdb5d7a",
+                "api_passphrase": "fgdhsj1029"
+            },
+            "bybit": {
+                "enabled": True,
+                "api_key": "pRlRUay1qabtDjhm65",
+                "api_secret": "ojA0wTeXYVuvo38qPqHXDiltGRFvAPnUZN05"
+                },
+            "okx": {
+                "enabled": True,
+                "api_key": "1eec7b7a-05f2-4307-90cb-7369946ccf7b",
+                "api_secret": "3388B82F398622F5E03C95EB9F28762C",
+                "api_passphrase": "fgdhsj1029"
+                },
+            "gateio": {
+                "enabled": True,
+                "api_key": "10ca2fa3ebc2168d895a93ca3a4e06ee",
+                "api_secret": "5f18833d7954d001c808c7898cd9b37ce6a3049bbb227f6e70324434d002c87c"
+                }
         },
         "trading_pairs": ["BTC-USDT", "ETH-USDT", "ADA-USDT", "DOT-USDT", "LINK-USDT"],
         "min_spread_percentage": 0.5,
@@ -44,8 +66,8 @@ async def main():
         return
     
     bot = ArbitrageBot()
-    #await bot.run()
-    await bot.run_single_exchange_test()
+    await bot.run()
+    #await bot.run_single_exchange_test()
 
 if __name__ == "__main__":
     asyncio.run(main())

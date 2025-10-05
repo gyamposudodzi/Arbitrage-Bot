@@ -6,14 +6,20 @@
       "api_secret": "Me307pBNCprWM9cd8gfZNenVPBXg3SPZO0KWj0apJEcPb4ve5aAAItFRiUZhGoNR"
     },
     "coinbase": {
-      "enabled": true,
+      "enabled": false,
       "api_key": "your_coinbase_api_key",
       "api_secret": "your_coinbase_api_secret"
     },
     "kraken": {
       "enabled": true,
-      "api_key": "your_kraken_api_key",
-      "api_secret": "your_kraken_api_secret"
+      "api_key": "pOVCGSomEdlE//5tgec1MC8nhXd85g3e8fIc2h0bExmQw42MT8NaFUHU",
+      "api_secret": "hasrr0/XnBDl920XTr/tKvkVgiSmDaPrZdiVTkDWF8p1/s0pOe2V6FPA0DnVBA0FAbP9NnEXxEn/6S/NHxj91w=="
+    },
+    "kucoin": {
+      "enabled": true,
+      "api_key": "68e1b47997abe30001b0b09e",
+      "api_secret": "dcfa0f53-4a6c-4912-bc60-e21fcbdb5d7a",
+      "api_passphrase": "fgdhsj1029"
     }
   },
   "trading_pairs": [

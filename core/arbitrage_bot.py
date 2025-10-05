@@ -2,7 +2,7 @@ import asyncio
 import time
 import json
 from typing import Dict, List
-from exchanges import BinanceAPI, CoinbaseAPI, KrakenAPI
+from exchanges import BinanceAPI, CoinbaseAPI, KrakenAPI, KuCoinAPI, GateIOAPI, BybitAPI, OKXAPI
 from core.arbitrage_engine import ArbitrageEngine
 from models.data_models import ArbitrageOpportunity
 
@@ -24,7 +24,11 @@ class ArbitrageBot:
                 "exchanges": {
                     "binance": {"enabled": True, "api_key": "", "api_secret": ""},
                     "coinbase": {"enabled": True, "api_key": "", "api_secret": ""},
-                    "kraken": {"enabled": True, "api_key": "", "api_secret": ""}
+                    "kraken": {"enabled": True, "api_key": "", "api_secret": ""},
+                    "kucoin": {"enabled": True, "api_key": "", "api_secret": "", "api_passphrase": ""},
+                    "bybit": {"enabled": True, "api_key": "", "api_secret": ""},
+                    "okx": {"enabled": True, "api_key": "", "api_secret": "", "api_passphrase": ""},
+                    "gateio": {"enabled": True, "api_key": "", "api_secret": ""}
                 },
                 "trading_pairs": ["BTC-USDT", "ETH-USDT", "ADA-USDT"],
                 "min_spread_percentage": 0.5,
@@ -40,6 +44,14 @@ class ArbitrageBot:
             self.exchanges["coinbase"] = CoinbaseAPI(self.config["exchanges"]["coinbase"])
         if self.config["exchanges"]["kraken"]["enabled"]:
             self.exchanges["kraken"] = KrakenAPI(self.config["exchanges"]["kraken"])
+        if self.config["exchanges"]["kucoin"]["enabled"]:
+            self.exchanges["kucoin"] = KuCoinAPI(self.config["exchanges"]["kucoin"])
+        if self.config["exchanges"]["bybit"]["enabled"]:
+            self.exchanges["bybit"] = BybitAPI(self.config["exchanges"]["bybit"])
+        if self.config["exchanges"]["okx"]["enabled"]:
+            self.exchanges["okx"] = OKXAPI(self.config["exchanges"]["okx"])
+        if self.config["exchanges"]["gateio"]["enabled"]:
+            self.exchanges["gateio"] = GateIOAPI(self.config["exchanges"]["gateio"])
     
     async def run(self):
         """Main execution loop"""
@@ -73,15 +85,19 @@ class ArbitrageBot:
             
             binance = self.exchanges["binance"]
             kraken = self.exchanges["kraken"]
+            kucoin = self.exchanges["kucoin"]
             
             try:
                 while True:
                     prices = await binance.get_prices(self.config["trading_pairs"])
                     pricess = await kraken.get_prices(self.config["trading_pairs"])
+                    pricesss = await kucoin.get_prices(self.config["trading_pairs"])
                     print(f"\n{time.strftime('%H:%M:%S')} - Binance Prices:")
                     for pair, price in prices.items():
                         print(f"  {pair}: ${price:.4f}")
                     for pair, price in pricess.items():
+                        print(f"  {pair}: ${price:.4f}")
+                    for pair, price in pricesss.items():
                         print(f"  {pair}: ${price:.4f}")    
                     
                     # SIMPLE sleep that can be interrupted by Ctrl+C
