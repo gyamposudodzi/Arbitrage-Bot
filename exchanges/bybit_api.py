@@ -17,27 +17,44 @@ class BybitAPI(BaseExchangeAPI):
         session = await self.get_session()
         
         try:
-            # Bybit spot tickers endpoint
-            async with session.get(f"{self.base_url}/spot/v3/public/quote/ticker/24hr") as response:
+            # Get all spot tickers
+            url = f"{self.base_url}/v5/market/tickers?category=spot"
+            
+            async with session.get(url) as response:
                 if response.status == 200:
                     data = await response.json()
-                    if data['retCode'] == 0:  # Bybit success code
-                        # Create lookup dictionary
-                        tickers = {}
+                    if data['retCode'] == 0:
+                        # Build ticker dictionary with EXACT matching
+                        all_tickers = {}
                         for item in data['result']['list']:
-                            if item['bid1Price']:  # Use bid price
+                            symbol = item['symbol']
+                            bid_price = item.get('bid1Price')
+                            if bid_price and bid_price.strip():
                                 try:
-                                    tickers[item['s']] = float(item['bid1Price'])
+                                    all_tickers[symbol] = float(bid_price)
                                 except (ValueError, TypeError):
                                     continue
                         
+                        # Debug: Show exact matches for our pairs
+                        print(f"🔍 Bybit exact pair matching:")
+                        
                         for pair in pairs:
-                            normalized = self.normalize_pair(pair)
-                            if normalized in tickers:
-                                prices[pair] = tickers[normalized]
+                            exact_symbol = self.normalize_pair(pair)  # BTC-USDT → BTCUSDT
+                            
+                            if exact_symbol in all_tickers:
+                                prices[pair] = all_tickers[exact_symbol]
+                                print(f"✅ Bybit {pair} → {exact_symbol}: ${prices[pair]:.4f}")
+                            else:
+                                # If exact match not found, skip this pair
+                                print(f"❌ Bybit {pair}: {exact_symbol} not found in available pairs")
+                                # DO NOT try to match with similar symbols - this causes wrong matches!
+                    
+                    else:
+                        print(f"❌ Bybit API error: {data['retMsg']}")
                 else:
-                    print(f"Bybit API error: {response.status}")
+                    print(f"❌ Bybit HTTP error {response.status}")
+                    
         except Exception as e:
-            print(f"Bybit error: {e}")
+            print(f"❌ Bybit exception: {e}")
         
         return prices

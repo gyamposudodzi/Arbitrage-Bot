@@ -20,16 +20,66 @@
       "api_key": "68e1b47997abe30001b0b09e",
       "api_secret": "dcfa0f53-4a6c-4912-bc60-e21fcbdb5d7a",
       "api_passphrase": "fgdhsj1029"
+    },
+    "bybit": {
+      "enabled": true,
+      "api_key": "pRlRUay1qabtDjhm65",
+      "api_secret": "ojA0wTeXYVuvo38qPqHXDiltGRFvAPnUZN05"
+    },
+    "okx": {
+      "enabled": true,
+      "api_key": "1eec7b7a-05f2-4307-90cb-7369946ccf7b",
+      "api_secret": "3388B82F398622F5E03C95EB9F28762C",
+      "api_passphrase": "Fgdhsj1029$$$$"
+    },
+    "gateio": {
+      "enabled": true,
+      "api_key": "10ca2fa3ebc2168d895a93ca3a4e06ee",
+      "api_secret": "5f18833d7954d001c808c7898cd9b37ce6a3049bbb227f6e70324434d002c87c"
     }
   },
+  
   "trading_pairs": [
-    "BTC-USDT",
+    
+    "BTC-USDT", 
     "ETH-USDT",
+    
+   
     "ADA-USDT",
-    "DOT-USDT",
-    "LINK-USDT"
+    "DOT-USDT", 
+    "LINK-USDT",
+    "SOL-USDT",
+    "AVAX-USDT",
+    "MATIC-USDT",
+    "ATOM-USDT",
+    "XRP-USDT",
+    "DOGE-USDT",
+    
+   
+    "NEAR-USDT",
+    "ALGO-USDT", 
+    "FTM-USDT",
+    "SAND-USDT",
+    "MANA-USDT",
+    "ENJ-USDT",
+    "CHZ-USDT",
+    "BAT-USDT",
+    "ONE-USDT",
+    "VET-USDT",
+    
+    
+    "GALA-USDT",
+    "IMX-USDT",
+    "RUNE-USDT",
+    "INJ-USDT",
+    "RNDR-USDT",
+    "ARB-USDT",
+    "OP-USDT",
+    "APT-USDT",
+    "SEI-USDT",
+    "SUI-USDT"
   ],
-  "min_spread_percentage": 0.5,
-  "update_interval": 5,
-  "max_opportunities": 10
+  "min_spread_percentage": 0.3,
+  "update_interval": 3,
+  "max_opportunities": 20
 }
