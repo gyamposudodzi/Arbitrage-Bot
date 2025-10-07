@@ -114,7 +114,7 @@ class ArbitrageBot:
                 await self.cleanup()
     
     def display_opportunities(self, opportunities: List[ArbitrageOpportunity]):
-        """Display found arbitrage opportunities"""
+        """Display found arbitrage opportunities with better precision"""
         if not opportunities:
             print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - No arbitrage opportunities found")
             return
@@ -123,10 +123,16 @@ class ArbitrageBot:
         print("-" * 80)
         
         for i, opp in enumerate(opportunities, 1):
+            # Use more decimals for low-priced tokens
+            if opp.buy_price < 1.0:  # For tokens under $1
+                price_format = ".6f"
+            else:
+                price_format = ".4f"
+            
             print(f"{i}. {opp.pair}")
-            print(f"   BUY : {opp.buy_exchange:10} @ ${opp.buy_price:.4f}")
-            print(f"   SELL: {opp.sell_exchange:10} @ ${opp.sell_price:.4f}")
-            print(f"   SPREAD: ${opp.spread:.4f} ({opp.spread_percentage:.2f}%)")
+            print(f"   BUY : {opp.buy_exchange:10} @ ${opp.buy_price:{price_format}}")
+            print(f"   SELL: {opp.sell_exchange:10} @ ${opp.sell_price:{price_format}}")
+            print(f"   SPREAD: ${opp.spread:.8f} ({opp.spread_percentage:.4f}%)")
             print()
     
     async def cleanup(self):
