@@ -11,6 +11,6 @@ __all__ = ['BinanceAPI',
            'KuCoinAPI', 
            'GateIOAPI', 
            'BybitAPI', 
-           'OKXAPI'
-           
-        ]#'CoinbaseAPI',]
+           'OKXAPI',
+           'CoinbaseAPI'
+           ]

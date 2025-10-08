@@ -6,9 +6,9 @@
       "api_secret": "Me307pBNCprWM9cd8gfZNenVPBXg3SPZO0KWj0apJEcPb4ve5aAAItFRiUZhGoNR"
     },
     "coinbase": {
-      "enabled": false,
-      "api_key": "your_coinbase_api_key",
-      "api_secret": "your_coinbase_api_secret"
+      "enabled": true,
+      "api_key": "e5d4e8c9-b8e4-4f96-8293-00074a5c5ee8",
+      "api_secret": "k09M8n8GlCxj/MUXOxM1hGbvkwnGPFcttzw8UTyAPHDA+1GWCvxStUjw5rb/mmP1AblAKI1IMtZU9lTaw2zlTQ=="
     },
     "kraken": {
       "enabled": true,

@@ -17,7 +17,7 @@ def create_config_template():
                 "api_secret": os.getenv('BINANCE_API_SECRET', '')
             },
             "coinbase": {
-                "enabled": False,
+                "enabled": True,
                 "api_key": os.getenv('COINBASE_API_KEY', ''),
                 "api_secret": os.getenv('COINBASE_API_SECRET', '')
             },
