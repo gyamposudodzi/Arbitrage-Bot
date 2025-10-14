@@ -11,3 +11,8 @@ class ArbitrageOpportunity:
     spread: float
     spread_percentage: float
     timestamp: float
+    # NEW: Fee-aware fields
+    buy_fee: float = 0.0
+    sell_fee: float = 0.0
+    net_spread_percentage: float = 0.0
+    actual_profit_percentage: float = 0.0

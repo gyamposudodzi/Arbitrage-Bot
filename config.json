@@ -79,7 +79,13 @@
     "SEI-USDT",
     "SUI-USDT"
   ],
-  "min_spread_percentage": 0.3,
+  "min_spread_percentage": 0.1,
   "update_interval": 3,
-  "max_opportunities": 20
+  "max_opportunities": 50,
+  
+  "paper_trading": {
+    "enabled": true,
+    "initial_balance": 1000,
+    "auto_trade_threshold": 0.3
+  }
 }

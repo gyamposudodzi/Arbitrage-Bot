@@ -80,6 +80,9 @@ class ArbitrageEngine:
         opportunities = []
         exchanges_with_price = []
         
+        # Import your existing FeeCalculator
+        from core.fee_calculator import FeeCalculator
+        
         # Collect all exchanges that have this pair
         for exchange_name, prices in exchange_prices.items():
             if pair in prices and prices[pair] > 0:
@@ -101,11 +104,20 @@ class ArbitrageEngine:
                     spread = sell_price - buy_price
                     spread_percentage = (spread / buy_price) * 100
                     
+                    # USE EXISTING FEE CALCULATOR
+                    net_profit_percentage = FeeCalculator.calculate_net_profit(
+                        buy_exchange, sell_exchange, spread_percentage
+                    )
+                    buy_fee = FeeCalculator.get_exchange_fee(buy_exchange)
+                    sell_fee = FeeCalculator.get_exchange_fee(sell_exchange)
+                    
                     # DEBUG: Show calculation for problematic pairs
                     if pair == "ONE-USDT" and spread_percentage >= 0.1:
                         print(f"  💰 {buy_exchange}→{sell_exchange}: {buy_price:.8f}→{sell_price:.8f} = {spread:.8f} ({spread_percentage:.4f}%)")
+                        print(f"  📊 Fees: {buy_fee*100:.2f}% + {sell_fee*100:.2f}% = {(buy_fee+sell_fee)*100:.2f}% | Net: {net_profit_percentage:.4f}%")
                     
-                    if spread_percentage >= self.min_spread:
+                    # Only consider opportunities with actual profit (0.1% minimum net profit)
+                    if net_profit_percentage >= 0.1:  # Minimum 0.1% net profit after fees
                         opportunity = ArbitrageOpportunity(
                             pair=pair,
                             buy_exchange=buy_exchange,
@@ -114,6 +126,10 @@ class ArbitrageEngine:
                             sell_price=sell_price,
                             spread=spread,
                             spread_percentage=spread_percentage,
+                            buy_fee=buy_fee,
+                            sell_fee=sell_fee,
+                            net_spread_percentage=net_profit_percentage,
+                            actual_profit_percentage=net_profit_percentage,
                             timestamp=time.time()
                         )
                         opportunities.append(opportunity)
