@@ -151,3 +151,14 @@ class ArbitrageBot:
             print(f"   NET Profit: {opp.actual_profit_percentage:.4f}% ✅")
             print(f"   Total Fees: {(opp.buy_fee + opp.sell_fee)*100:.2f}%")
             print()
+            
+    async def cleanup(self):
+        """Clean up resources properly"""
+        print("Closing exchange sessions...")
+        for exchange_name, exchange in self.exchanges.items():
+            try:
+                await exchange.close_session()
+                print(f"✅ Closed {exchange_name} session")
+            except Exception as e:
+                print(f"❌ Error closing {exchange_name}: {e}")
+        print("✅ Cleanup complete!")
