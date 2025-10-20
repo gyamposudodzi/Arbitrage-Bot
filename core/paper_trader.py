@@ -60,7 +60,7 @@ class PaperTrader:
         print(f"   Amount: ${trade_amount:.2f} | Net Profit: ${net_profit:.4f} ({net_profit_percentage:.4f}%)")
         print(f"   New Balance: ${self.balance:.2f}")
         
-        return trade_record
+        return trade_record 
     
     def get_performance_stats(self):
         """Get paper trading performance statistics"""

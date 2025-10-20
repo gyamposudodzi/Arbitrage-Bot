@@ -16,3 +16,4 @@ class ArbitrageOpportunity:
     sell_fee: float = 0.0
     net_spread_percentage: float = 0.0
     actual_profit_percentage: float = 0.0
+    

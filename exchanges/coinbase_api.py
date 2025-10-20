@@ -55,7 +55,7 @@ class CoinbaseAPI(BaseExchangeAPI):
                 )
 
                 if not target:
-                    print(f"{pair} not listed on Coinbase.")
+                    #print(f"{pair} not listed on Coinbase.")
                     continue
 
                 async with session.get(f"{self.base_url}/products/{target}/ticker") as response:

@@ -43,10 +43,11 @@ class BybitAPI(BaseExchangeAPI):
                             
                             if exact_symbol in all_tickers:
                                 prices[pair] = all_tickers[exact_symbol]
-                                print(f"✅ Bybit {pair} → {exact_symbol}: ${prices[pair]:.4f}")
+                                #print(f"✅ Bybit {pair} → {exact_symbol}: ${prices[pair]:.4f}")
                             else:
                                 # If exact match not found, skip this pair
-                                print(f"❌ Bybit {pair}: {exact_symbol} not found in available pairs")
+                                #print(f"❌ Bybit {pair}: {exact_symbol} not found in available pairs")
+                                continue
                                 # DO NOT try to match with similar symbols - this causes wrong matches!
                     
                     else:
