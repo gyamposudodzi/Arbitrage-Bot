@@ -36,7 +36,7 @@ class BybitAPI(BaseExchangeAPI):
                                     continue
                         
                         # Debug: Show exact matches for our pairs
-                        print(f"🔍 Bybit exact pair matching:")
+                       # print(f"🔍 Bybit exact pair matching:")
                         
                         for pair in pairs:
                             exact_symbol = self.normalize_pair(pair)  # BTC-USDT → BTCUSDT

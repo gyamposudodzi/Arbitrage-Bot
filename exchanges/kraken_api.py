@@ -33,7 +33,7 @@ class KrakenAPI(BaseExchangeAPI):
                         # Kraken returns dynamic keys
                         result = data.get("result", {})
                         if not result:
-                            print(f"{pair} not listed on Kraken.")
+                            #print(f"{pair} not listed on Kraken.")
                             continue
 
                         first_key = next(iter(result))
