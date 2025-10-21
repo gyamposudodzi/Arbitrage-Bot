@@ -5,7 +5,7 @@ from typing import Dict, Optional
 from models.data_models import ArbitrageOpportunity
 
 class LiveTrader:
-    def _init_(self, bot):
+    def __init__(self, bot):
         self.bot = bot
         self.trade_history = []
         self.is_live = False

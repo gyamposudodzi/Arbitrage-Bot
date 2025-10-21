@@ -84,8 +84,16 @@
   "max_opportunities": 50,
   
   "paper_trading": {
-    "enabled": true,
+    "enabled": false,
     "initial_balance": 1000,
     "auto_trade_threshold": 0.3
+  },
+
+  "live_trading": {
+    "enabled": true,
+    "max_trade_size": 100,
+    "daily_loss_limit": 50,
+    "manual_approval": true
   }
+
 }
