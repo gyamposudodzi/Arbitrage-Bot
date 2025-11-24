@@ -2,40 +2,40 @@
   "exchanges": {
     "binance": {
       "enabled": true,
-      "api_key": "6HbxsuJq3X4bqf7nl01zeDOG2v2Q69K41eJ4pXwoGbyPInSe6pxhakd3Uvj5hTQV",
-      "api_secret": "Me307pBNCprWM9cd8gfZNenVPBXg3SPZO0KWj0apJEcPb4ve5aAAItFRiUZhGoNR"
+      "api_key": "",
+      "api_secret": ""
     },
     "coinbase": {
       "enabled": true,
-      "api_key": "e5d4e8c9-b8e4-4f96-8293-00074a5c5ee8",
-      "api_secret": "k09M8n8GlCxj/MUXOxM1hGbvkwnGPFcttzw8UTyAPHDA+1GWCvxStUjw5rb/mmP1AblAKI1IMtZU9lTaw2zlTQ=="
+      "api_key": "",
+      "api_secret": ""
     },
     "kraken": {
       "enabled": true,
-      "api_key": "pOVCGSomEdlE//5tgec1MC8nhXd85g3e8fIc2h0bExmQw42MT8NaFUHU",
-      "api_secret": "hasrr0/XnBDl920XTr/tKvkVgiSmDaPrZdiVTkDWF8p1/s0pOe2V6FPA0DnVBA0FAbP9NnEXxEn/6S/NHxj91w=="
+      "api_key": "",
+      "api_secret": ""
     },
     "kucoin": {
       "enabled": true,
-      "api_key": "68e1b47997abe30001b0b09e",
-      "api_secret": "dcfa0f53-4a6c-4912-bc60-e21fcbdb5d7a",
-      "api_passphrase": "fgdhsj1029"
+      "api_key": "",
+      "api_secret": "",
+      "api_passphrase": ""
     },
     "bybit": {
       "enabled": true,
-      "api_key": "pRlRUay1qabtDjhm65",
-      "api_secret": "ojA0wTeXYVuvo38qPqHXDiltGRFvAPnUZN05"
+      "api_key": "",
+      "api_secret": ""
     },
     "okx": {
       "enabled": true,
-      "api_key": "1eec7b7a-05f2-4307-90cb-7369946ccf7b",
-      "api_secret": "3388B82F398622F5E03C95EB9F28762C",
-      "api_passphrase": "Fgdhsj1029$$$$"
+      "api_key": "",
+      "api_secret": "",
+      "api_passphrase": ""
     },
     "gateio": {
       "enabled": true,
-      "api_key": "10ca2fa3ebc2168d895a93ca3a4e06ee",
-      "api_secret": "5f18833d7954d001c808c7898cd9b37ce6a3049bbb227f6e70324434d002c87c"
+      "api_key": "",
+      "api_secret": ""
     }
   },
   
