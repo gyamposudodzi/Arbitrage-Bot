@@ -21,8 +21,7 @@ Supports major exchanges through modular API wrappers:
 - KuCoin  
 
 Each exchange implements:
-- Market data fetching  
-- Balance retrieval  
+- Market data fetching    
 - Order execution  
 - Unified interface through `BaseExchange`
 
@@ -65,7 +64,7 @@ Handles:
 Two trading modes:
 ```
 
-core/live_trader.py      # Executes real trades
+core/live_trader.py(In development)      # Executes real trades
 core/paper_trader.py     # Simulated trading for testing
 
 ```
@@ -117,10 +116,8 @@ Benefits:
 Each exchange exposes unified methods:
 
 ```python
-get_orderbook()
-get_ticker()
-get_balance()
-place_order()
+Find_opportunities()
+get_price()
 ````
 
 ### 2. Opportunity Detection
@@ -140,7 +137,7 @@ Validates:
 
 ### 3. Execution Layer
 
-`live_trader.py` or `paper_trader.py` handles:
+`live_trader.py(in development)` or `paper_trader.py` handles:
 
 * Coordinated buy/sell orders
 * Order tracking
@@ -154,7 +151,7 @@ Validates:
 ### 1. Clone the repository
 
 ```bash
-git clone <YOUR_REPO_URL>
+git clone https://github.com/gyamposudodzi/Arbitrage-Bot
 cd arbitrage-bot
 ```
 
@@ -193,7 +190,7 @@ python main.py
 * Modular, extendable arbitrage framework
 * Easy testing on multiple exchanges
 * Reliable fee-aware spread evaluation
-* Expandable into **market making** or **statistical arbitrage**
+* Expandable into **Triangular Arbitrage**
 
 ---
 
