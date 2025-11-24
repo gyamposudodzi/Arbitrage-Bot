@@ -1,4 +1,4 @@
 .env
 *.env
-config.json
+*.json
 __pycache__/
