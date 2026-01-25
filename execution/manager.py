@@ -24,8 +24,30 @@ class ExecutionManager:
         
         # Initialize order executors
         self.executors = {}
+        self.balances = {} # Cache: {'binance': 1000.0, ...}
         self._setup_executors()
+    
+    async def refresh_balances(self):
+        """Update cached USDT balances for all exchanges"""
+        print("💰 Refreshing balances...")
+        tasks = []
+        names = []
         
+        for name, executor in self.executors.items():
+            names.append(name)
+            tasks.append(executor.get_balance("USDT"))
+            
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for name, res in zip(names, results):
+            if isinstance(res, Exception):
+                print(f"   ⚠️ Could not fetch balance for {name}: {res}")
+                self.balances[name] = 0.0
+            else:
+                self.balances[name] = float(res)
+                print(f"   💵 {name.capitalize()}: ${self.balances[name]:.2f}")
+        print("")
+
     def _setup_executors(self):
         """Setup order executors for each enabled exchange"""
         print("🔄 Setting up execution layer...")
@@ -78,7 +100,12 @@ class ExecutionManager:
             print("❌ Live trading disabled.")
             return False
             
-        print(f"🚀 EXECUTING REAL LIVE TRADE: {opportunity.pair}")
+        # Check Execution Mode
+        execution_mode = self.bot.config.get("execution_mode", "normal")
+        if execution_mode == "hft":
+            return await self.execute_parallel_trade(opportunity)
+            
+        print(f"🚀 EXECUTING REAL LIVE TRADE (Sequential): {opportunity.pair}")
         
         # 1. Get Executors
         buy_exec = self.executors.get(opportunity.buy_exchange)
@@ -88,11 +115,23 @@ class ExecutionManager:
             print("❌ Missing executors for this pair")
             return False
 
-        # 2. Execute (Simple sequential for now)
-        # Ideally we'd use gather, but let's be safe first
+        # --- DYNAMIC SIZING & FUND CHECK ---
+        buy_balance = self.balances.get(opportunity.buy_exchange, 0.0)
         
+        # 1. Check Minimum Viability
+        if buy_balance < 10.0: # Minimum $10 to trade
+            print(f"❌ Insufficient funds on {opportunity.buy_exchange} (${buy_balance:.2f})")
+            return False
+            
+        # 2. Dynamic Sizing
+        # Use 99% of balance to leave dust for fees/variance, capped at max_trade_size
+        safe_trade_amount = min(self.max_trade_size, buy_balance * 0.99)
+        
+        print(f"💰 Dynamic Sizing: Balance ${buy_balance:.2f} -> Trading ${safe_trade_amount:.2f}")
+
+        # 2. Execute (Sequential)
         try:
-            quantity = self.max_trade_size / opportunity.buy_price
+            quantity = safe_trade_amount / opportunity.buy_price
             
             # Buy
             print(f"📥 Buying on {opportunity.buy_exchange}...")
@@ -136,6 +175,101 @@ class ExecutionManager:
         except Exception as e:
             print(f"❌ Execution Exception: {e}")
             return False
+
+    async def execute_parallel_trade(self, opportunity: ArbitrageOpportunity) -> bool:
+        """
+        Execute trade using HFT Parallel Mode.
+        Sends Buy and Sell orders SIMULTANEOUSLY.
+        Handles emergency rollback if one leg fails.
+        """
+        print(f"⚡ HFT EXECUTING PARALLEL TRADE: {opportunity.pair}")
+        
+        buy_exec = self.executors.get(opportunity.buy_exchange)
+        sell_exec = self.executors.get(opportunity.sell_exchange)
+        
+        if not buy_exec or not sell_exec:
+            return False
+            
+        # --- DYNAMIC SIZING ---
+        buy_balance = self.balances.get(opportunity.buy_exchange, 0.0)
+        if buy_balance < 10.0:
+            print(f"❌ HFT Skipped: Insufficient funds on {opportunity.buy_exchange}")
+            return False
+            
+        safe_trade_amount = min(self.max_trade_size, buy_balance * 0.99)
+        quantity = safe_trade_amount / opportunity.buy_price
+        
+        # Prepare Coroutines (Fire both at once)
+        buy_task = buy_exec.place_market_order(
+            self.bot.exchanges[opportunity.buy_exchange].normalize_pair(opportunity.pair),
+            'buy',
+            quantity
+        )
+        sell_task = sell_exec.place_market_order(
+            self.bot.exchanges[opportunity.sell_exchange].normalize_pair(opportunity.pair),
+            'sell',
+            quantity
+        )
+        
+        print(f"   🔥 Firing orders to {opportunity.buy_exchange} and {opportunity.sell_exchange}...")
+        results = await asyncio.gather(buy_task, sell_task, return_exceptions=True)
+        
+        buy_res, sell_res = results[0], results[1]
+        
+        # Check for Exceptions
+        if isinstance(buy_res, Exception): buy_res = {'success': False, 'error': str(buy_res)}
+        if isinstance(sell_res, Exception): sell_res = {'success': False, 'error': str(sell_res)}
+        
+        buy_ok = buy_res.get('success')
+        sell_ok = sell_res.get('success')
+        
+        # Scenario 1: Both Success (Perfect)
+        if buy_ok and sell_ok:
+            profit = self.max_trade_size * opportunity.actual_profit_percentage / 100
+            self.total_pnl += profit
+            print(f"   ✅ HFT SUCCESS! ⚡ Profit: ${profit:.4f}")
+            return True
+            
+        # Scenario 2: Both Failed
+        if not buy_ok and not sell_ok:
+            print("   ❌ Both legs failed. No exposure.")
+            return False
+            
+        # Scenario 3: Buy OK, Sell FAILED (We hold asset, need to dump)
+        if buy_ok and not sell_ok:
+            print(f"   ⚠️  PARTIAL EXECUTION: Bought on {opportunity.buy_exchange} but Sell failed!")
+            print("   🚨 INITIATING EMERGENCY ROLLBACK (SELL BACK)...")
+            
+            rollback_res = await buy_exec.place_market_order(
+                 self.bot.exchanges[opportunity.buy_exchange].normalize_pair(opportunity.pair),
+                 'sell', # Sell back to close
+                 quantity
+            )
+            
+            if rollback_res.get('success'):
+                print("   ✅ Rollback Success: Position Closed (Loss realized).")
+            else:
+                print("   ❌❌ CRITICAL: ROLLBACK FAILED. MANUAL INTERVENTION REQUIRED!")
+            return False
+            
+        # Scenario 4: Buy FAILED, Sell OK (We sold short, need to buy back)
+        if not buy_ok and sell_ok:
+            print(f"   ⚠️  PARTIAL EXECUTION: Sold on {opportunity.sell_exchange} but Buy failed!")
+            print("   🚨 INITIATING EMERGENCY ROLLBACK (BUY BACK)...")
+            
+            rollback_res = await sell_exec.place_market_order(
+                 self.bot.exchanges[opportunity.sell_exchange].normalize_pair(opportunity.pair),
+                 'buy', # Buy back to close
+                 quantity
+            )
+            
+            if rollback_res.get('success'):
+                print("   ✅ Rollback Success: Position Closed (Loss realized).")
+            else:
+                print("   ❌❌ CRITICAL: ROLLBACK FAILED. MANUAL INTERVENTION REQUIRED!")
+            return False
+            
+        return False
 
     async def execute_funding_trade(self, opportunity: FundingOpportunity, manual_approval: bool = True) -> bool:
         """

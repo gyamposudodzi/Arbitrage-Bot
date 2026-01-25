@@ -17,6 +17,25 @@ class BinanceAPI(BaseExchangeAPI, StreamingExchangeInterface):
         # Convert BTC-USDT to BTCUSDT
         return pair.replace("-", "")
     
+    async def get_trading_pairs(self) -> set:
+        """Fetch all active trading pairs from Binance"""
+        supported = set()
+        session = await self.get_session()
+        try:
+            async with session.get(f"{self.base_url}/exchangeInfo") as response:
+                if response.status == 200:
+                    data = await response.json()
+                    for symbol_info in data.get('symbols', []):
+                        if symbol_info.get('status') == 'TRADING':
+                            # Construct normalized format. 
+                            # Binance gives "BTC" as baseAsset, "USDT" as quoteAsset
+                            base = symbol_info['baseAsset']
+                            quote = symbol_info['quoteAsset']
+                            supported.add(f"{base}-{quote}")
+        except Exception as e:
+            print(f"Binance pair fetch error: {e}")
+        return supported
+    
     async def get_all_tickers(self) -> Dict[str, float]:
         """Fetch all prices for Triangular Arbitrage"""
         prices = {}
@@ -81,6 +100,27 @@ class BinanceAPI(BaseExchangeAPI, StreamingExchangeInterface):
                     return []
         except Exception as e:
             print(f"Binance funding exception: {e}")
+            return []
+
+    async def get_delivery_prices(self) -> List[Dict]:
+        """
+        Fetch prices for Dated Futures (Delivery contracts).
+        Targeting COIN-M Futures (dapi) because that's where most dated contracts live (e.g. BTCUSD_201225).
+        """
+        session = await self.get_session()
+        try:
+            # Using COIN-M Futures API for Delivery Contracts
+            async with session.get("https://dapi.binance.com/dapi/v1/premiumIndex") as response:
+                if response.status == 200:
+                    data = await response.json()
+                    # Filter for actual dated futures (containing "_")
+                    # symbol example: "BTCUSD_201225"
+                    return [item for item in data if "_" in item['symbol']]
+                else:
+                    print(f"Binance delivery error: {response.status}")
+                    return []
+        except Exception as e:
+            print(f"Binance delivery exception: {e}")
             return []
 
     async def get_prices(self, pairs: List[str]) -> Dict[str, float]:

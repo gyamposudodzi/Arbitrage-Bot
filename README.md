@@ -2,225 +2,128 @@
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![GitHub Repo Size](https://img.shields.io/github/repo-size/gyamposudodzi/Arbitrage-Bot)
+![Status](https://img.shields.io/badge/Status-Production%20Ready-success)
 
-A high-performance, multi-exchange **cryptocurrency arbitrage trading bot** designed to scan markets, detect profitable price discrepancies, and execute trades automatically. Supports **live and paper trading**, multiple exchanges, fee-aware calculations, and modular architecture.
+A high-performance, multi-exchange **cryptocurrency arbitrage trading bot**. This advanced system includes **Smart Order Routing**, **Risk Management**, and support for multiple arbitrage strategies including Spot-Spot, Triangular, Funding Rates, and Spot-Future Basis.
 
 ---
 
 ## 🚀 Key Features
 
-### 🔄 Multi-Exchange Support
-Supports major exchanges through modular API wrappers:
-- Binance  
-- OKX  
-- Bybit  
-- Coinbase  
-- Kraken  
-- Gate.io  
-- KuCoin  
+### 1. 🧠 Smart & Autonomous
+*   **Smart Pair Retrieval (Auto-Discovery)**: Automatically fetches valid trading pairs from each exchange on startup. It filters your config against reality, preventing "Pair not found" errors.
+*   **Smart Fund Awareness**: Checks your wallet balance before every trade.
+    *   **Safety Gate**: Skips trades if funds < $10.
+    *   **Dynamic Sizing**: Automatically resizes orders to fit your available balance (e.g., if you have $40 but config says $100, it trades $39.60).
+*   **Smart Fee Management**: Calculates real-time withdrawal fees to ensure "Net Profit" is truly profitable.
 
-Each exchange implements:
-- Market data fetching    
-- Order execution  
-- Unified interface through `BaseExchange`
+### 2. 🛡️ Robust Execution Modes
+*   **Normal Mode (Sequential)**: Buys on Exchange A, confirms success, then Sells on Exchange B. Safer but slower.
+*   **HFT Mode (Parallel)**: Fires Buy (A) and Sell (B) orders **simultaneously** for zero-latency execution.
+    *   **Atomic Rollback**: If one leg fails, the bot automatically reverses the other leg to prevent open exposure.
+*   **Paper Trading**: Test strategies with simulated money (`$1000` starting balance).
 
----
-
-### ⚡ Real-Time Arbitrage Engine
-Detects opportunities by:
-- Fetching order book/price data  
-- Calculating spreads  
-- Determining profitability after fees and slippage  
-- Executing trades automatically  
-
-Core logic lives in:
-
-```
-
-core/arbitrage_engine.py
-core/arbitrage_bot.py
-
-```
+### 3. 🌊 Real-Time Data
+*   **Full WebSocket Support**: Subscribes to real-time ticker streams for all 7 supported exchanges.
+*   **VWAP Liquidity Check**: Verifies order book depth (Volume Weighted Average Price) to ensure your trade size won't cause slippage.
 
 ---
 
-### 💰 Fee & Profitability Handling
-Uses a dedicated module to ensure accurate calculations:
+## 📈 Arbitrage Strategies
 
-```
+The bot runs 4 distinct strategies concurrently:
 
-core/fee_calculator.py
+### 1. standard Spot Arbitrage (Cross-Exchange)
+*   **Logic**: Buy Low on Exchange A -> Sell High on Exchange B.
+*   **Supported Exchanges**: All (Binance, Coinbase, Kraken, KuCoin, Bybit, OKX, GateIO).
+*   **Requirement**: You must hold USDT on Exchange A and the Asset on Exchange B (for parallel execution).
 
-```
+### 2. 📐 Triangular Arbitrage
+*   **Logic**: Trade within one exchange: `USDT` -> `BTC` -> `ETH` -> `USDT`.
+*   **Supported Exchanges**: All.
+*   **Status**: Fully implemented with Bellman-Ford path finding.
 
-Handles:
-- Exchange-specific fee structures  
-- Profitability validation before execution  
+### 3. 🔮 Funding Rate Arbitrage (Delta-Neutral)
+*   **Logic**: Exploits high positive funding rates on Perpetual Futures.
+    *   **Action**: Buy Spot + Short Futures (1:1 hedge).
+    *   **Profit**: Earn funding fees every 8 hours while being price-neutral.
+*   **Supported Exchanges**: **Binance Only**.
+*   **Limitation**: Requires Futures account enablement and API permissions.
 
----
-
-### 📈 Live vs Paper Trading
-Two trading modes:
-```
-
-core/live_trader.py(In development)      # Executes real trades
-core/paper_trader.py     # Simulated trading for testing
-
-```
-
-Paper trading allows **risk-free strategy testing** before going live.
-
----
-
-### 🧱 Modular Order Execution
-Each exchange has its own order execution class, inheriting from a shared base:
-
-```
-
-order_execution/base_order.py
-order_execution/binance_order.py
-...
-
-```
-
-Benefits:
-- Clean abstraction  
-- Easy extension to new exchanges  
-- Reliable error handling  
+### 4. 📉 Spot-Future Basis Arbitrage (Risk-Free Yield)
+*   **Logic**: Exploits the price difference between Spot and **Dated (Delivery)** Futures.
+    *   **Action**: Buy Spot + Short Dated Future (e.g. `BTC-JUN26`).
+    *   **Profit**: Fixed spread locked in until expiry (No funding risk).
+*   **Supported Exchanges**: **Binance Only**.
 
 ---
 
-### 📦 Project Structure
+## ⚙️ Configuration
 
-```
-
-├── main.py                   # Entry point for running the bot
-├── config.json               # API keys and runtime settings
-├── debug_prices.py           # Debugging tool for price feeds
-├── core/                     # Core engine and trading logic
-├── exchanges/                # Exchange API wrappers
-├── order_execution/          # Order-building & execution logic
-├── models/                   # Data models & type definitions
-├── requirements.txt
-├── README.md
-└── LICENSE
-
-````
-
----
-
-## ⚙️ How It Works
-
-### 1. Price Fetching
-Each exchange exposes unified methods:
-
-```python
-Find_opportunities()
-get_price()
-````
-
-### 2. Opportunity Detection
-
-Calculates the spread:
-
-```python
-spread = (sell_price - buy_price) / buy_price * 100
-```
-
-Validates:
-
-* Fees
-* Minimum profit threshold
-* Liquidity
-* Trade amount
-
-### 3. Execution Layer
-
-`live_trader.py(in development)` or `paper_trader.py` handles:
-
-* Coordinated buy/sell orders
-* Order tracking
-* Error handling
-* Logging
-
----
-
-## 🛠 Installation & Setup
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/gyamposudodzi/Arbitrage-Bot
-cd arbitrage-bot
-```
-
-### 2. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configure API keys
-
-Edit `config.json`:
+Edit `config.json` to control the bot:
 
 ```json
 {
-  "min_profit_percent": 0.2,
-  "trade_amount": 50,
+  "execution_mode": "normal",  // Options: "normal" or "hft"
+  "trading_pairs": ["BTC-USDT", "ETH-USDT", ...],
   "exchanges": {
-    "binance": { "apiKey": "", "secret": "" },
-    "okx": { "apiKey": "", "secret": "" },
-    "kraken": { "apiKey": "", "secret": "" }
+    "binance": { "enabled": true, "api_key": "...", "api_secret": "..." },
+    "coinbase": { "enabled": true, "api_key": "...", "api_secret": "..." }
+    ...
+  },
+  "live_trading": {
+    "enabled": true,
+    "max_trade_size": 100,      // Max $ per trade
+    "daily_loss_limit": 50
+  },
+  "paper_trading": {
+    "enabled": false            // Set true to simulate
   }
 }
 ```
 
-### 4. Run the bot
+---
 
-```bash
-python main.py
+## ⚠️ Limitations & Roadmap
+
+| Feature | Status | Supported Exchanges | Notes |
+| :--- | :--- | :--- | :--- |
+| **Spot Arbitrage** | ✅ Live | All 7 | Requires funds on both sides for HFT. |
+| **Triangular Arb** | ✅ Live | All 7 | Profitability depends on low trading fees (BNB burn advised). |
+| **funding Arb** | ✅ Live | **Binance Only** | Other exchanges (Bybit/OKX) in roadmap. |
+| **Basis Arb** | ✅ Live | **Binance Only** | Only Binance has liquid Delivery Futures. |
+| **DEX (Uniswap)** | ⏳ Planned | None | Requires Web3.py integration. |
+| **Flash Loans** | ⏳ Planned | None | Aave/DyDx smart contracts required. |
+
+---
+
+## 📦 Project Structure
+
+```
+├── main.py                   # Entry point
+├── config.json               # Settings
+├── core/
+│   ├── arbitrage_bot.py      # Main Orchestrator
+│   ├── arbitrage_engine.py   # Signal Detection
+│   ├── basis_arb.py          # Spot-Future Basis Engine
+│   ├── funding_arb.py        # Funding Rate Engine
+│   ├── triangular_arb.py     # Triangular Engine
+│   └── database_manager.py   # SQLite persistence
+├── exchanges/                # API Wrappers (Unified Interface)
+├── execution/                # Order Execution & Balance Mgmt
+└── data/                     # Database storage
 ```
 
 ---
 
-## 🎯 Project Goals
+## 🛠 Installation
 
-* Modular, extendable arbitrage framework
-* Easy testing on multiple exchanges
-* Reliable fee-aware spread evaluation
-* Expandable into **Triangular Arbitrage**
-
----
-
-## 🧪 Testing & Debugging
-
-Verify exchange connections and price feeds:
-
-```bash
-python debug_prices.py
-```
+1.  **Clone**: `git clone https://github.com/gyamposudodzi/Arbitrage-Bot`
+2.  **Install**: `pip install -r requirements.txt`
+3.  **Config**: Rename `config.example.json` to `config.json` and add keys.
+4.  **Run**: `python main.py`
 
 ---
 
 ## ⚠️ Disclaimer
-
-This project is for **educational and research purposes only**.
-Cryptocurrency trading carries **significant financial risk**.
-Use responsibly and at your own risk.
-
----
-
-## 🤝 Contributing
-
-Not taking one at the Moment. But I am very sure i will
-
----
-
-## 📄 License
-
-[MIT License](LICENSE)
-
-
-```
+This software is for **educational purposes**. High-Frequency Trading (HFT) involves significant risks including API rate limits, network latency, and execution slippage. Never trade money you cannot afford to lose. Use "Paper Trading" mode first!

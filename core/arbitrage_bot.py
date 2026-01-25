@@ -11,6 +11,7 @@ from models.data_models import ArbitrageOpportunity
 from core.paper_trader import PaperTrader
 from execution.manager import ExecutionManager  # NEW
 from core.fee_manager import FeeManager # NEW
+from core.basis_arb import BasisArbitrageEngine # NEW
 from core.logger import setup_logger
 
 class ArbitrageBot:
@@ -18,6 +19,7 @@ class ArbitrageBot:
         self.logger = setup_logger("ArbitrageBot")
         self.config = self.load_config(config_file)
         self.exchanges = {}
+        self.exchange_pairs = {} # NEW: Smart Pair Cache
         self.opportunities = []
         self.setup_exchanges()
         self.db = DatabaseManager()  # NEW: Initialize Database
@@ -27,35 +29,49 @@ class ArbitrageBot:
         self.fee_manager = FeeManager(self.executor) # NEW
         self.tri_engine = TriangularArbitrageEngine(self)
         self.funding_engine = FundingRateArbitrageEngine(self)
+        self.basis_engine = BasisArbitrageEngine(self) # NEW
         
     def load_config(self, config_file: str) -> Dict:
-        """Load configuration from JSON file"""
+        """Load configuration from JSON file and merge with env vars"""
+        config = {}
         try:
             with open(config_file, 'r') as f:
-                return json.load(f)
+                config = json.load(f)
         except FileNotFoundError:
-            # Default configuration
-            return {
-                "exchanges": {
-                    "binance": {"enabled": True, "api_key": "", "api_secret": ""},
-                    "coinbase": {"enabled": True, "api_key": "", "api_secret": ""},
-                    "kraken": {"enabled": True, "api_key": "", "api_secret": ""},
-                    "kucoin": {"enabled": True, "api_key": "", "api_secret": "", "api_passphrase": ""},
-                    "bybit": {"enabled": True, "api_key": "", "api_secret": ""},
-                    "okx": {"enabled": True, "api_key": "", "api_secret": "", "api_passphrase": ""},
-                    "gateio": {"enabled": True, "api_key": "", "api_secret": ""}
-                },
-                "trading_pairs": ["BTC-USDT", "ETH-USDT", "ADA-USDT"],
-                "min_spread_percentage": 0.5,
-                "update_interval": 5,
-                "max_opportunities": 10,
-                "live_trading": {  # NEW
-                    "enabled": False,
-                    "max_trade_size": 100,
-                    "daily_loss_limit": 50,
-                    "manual_approval": True
-                }
-            }
+            # Fallback (should be handled by main.py)
+            pass
+
+        # IMPORTANT: Override secrets from Environment Variables if present
+        # This fixes the issue where config.json is stale/empty but .env has keys.
+        from os import getenv
+        
+        env_map = {
+            "binance": ["BINANCE_API_KEY", "BINANCE_API_SECRET"],
+            "coinbase": ["COINBASE_API_KEY", "COINBASE_API_SECRET"],
+            "kraken": ["KRAKEN_API_KEY", "KRAKEN_API_SECRET"],
+            "kucoin": ["KUCOIN_API_KEY", "KUCOIN_API_SECRET", "KUCOIN_API_PASSPHRASE"],
+            "bybit": ["BYBIT_API_KEY", "BYBIT_API_SECRET"],
+            "okx": ["OKX_API_KEY", "OKX_API_SECRET", "OKX_API_PASSPHRASE"],
+            "gateio": ["GATEIO_API_KEY", "GATEIO_API_SECRET"]
+        }
+        
+        if "exchanges" in config:
+            for exchange, vars in env_map.items():
+                if exchange in config["exchanges"]:
+                    # Key
+                    key_val = getenv(vars[0])
+                    if key_val: config["exchanges"][exchange]["api_key"] = key_val
+                    
+                    # Secret
+                    sec_val = getenv(vars[1])
+                    if sec_val: config["exchanges"][exchange]["api_secret"] = sec_val
+                    
+                    # Passphrase (if applicable)
+                    if len(vars) > 2:
+                        pass_val = getenv(vars[2])
+                        if pass_val: config["exchanges"][exchange]["api_passphrase"] = pass_val
+
+        return config
     
     def setup_exchanges(self):
         """Initialize exchange connectors"""
@@ -78,7 +94,32 @@ class ArbitrageBot:
         """Main execution loop with live trading"""
         engine = ArbitrageEngine(self)
         
-        # Start WebSocket Streams
+        # --- SMART PAIR RETRIEVAL (Auto-Discovery) ---
+        self.logger.info("🧠 Performing Smart Pair Retrieval...")
+        
+        # 1. Fetch supported pairs per exchange
+        for name, exchange in self.exchanges.items():
+            self.logger.info(f"   Fetching pairs for {name}...")
+            supported = await exchange.get_trading_pairs()
+            
+            if supported:
+                # Intersect with config
+                valid_pairs = []
+                for p in self.config["trading_pairs"]:
+                    # Check exact match OR fallback match (e.g. BTC-USD for Coinbase)
+                    if p in supported:
+                        valid_pairs.append(p)
+                    elif name == "coinbase" and p.replace("USDT", "USD") in supported:
+                        valid_pairs.append(p)
+                
+                self.exchange_pairs[name] = valid_pairs
+                self.logger.info(f"   ✅ {name}: Verified {len(valid_pairs)}/{len(self.config['trading_pairs'])} pairs")
+            else:
+                # Fallback if fetch fails (e.g. not implemented yet)
+                self.exchange_pairs[name] = self.config["trading_pairs"]
+                self.logger.info(f"   ⚠️ {name}: Using full config list (Auto-discovery skipped)")
+
+        # 2. Start Streaming with VALIDATED lists
         await engine.start_streaming()
         self.logger.info("⏳ Waiting 5 seconds for streams to warm up...")
         await asyncio.sleep(5)
@@ -95,6 +136,9 @@ class ArbitrageBot:
             print(f"   Max trade size: ${self.executor.max_trade_size}")
             print(f"   Daily loss limit: ${self.executor.daily_loss_limit}")
             print("   Manual approval required for each trade")
+            
+            # Initial Balance Check
+            await self.executor.refresh_balances()
         
         try:
             cycle_count = 0
@@ -116,48 +160,77 @@ class ArbitrageBot:
                 # If we have verified ones, display them. Otherwise show raw.
                 if verified_opportunities:
                     # Update the main list with verified versions at the top
-                    self.display_opportunities(verified_opportunities)
+                    await self.display_opportunities(verified_opportunities)
                     
                     if self.executor.is_live:
                          best_opportunity = verified_opportunities[0]
                          if best_opportunity.actual_profit_percentage >= 0.3:
                              await self.executor.execute_trade(best_opportunity, manual_approval=True)
                 else:
-                    self.display_opportunities(opportunities)
+                    await self.display_opportunities(opportunities)
                 
-                # Paper Trading (use verified if available)
-                trade_list = verified_opportunities if verified_opportunities else opportunities
-                if trade_list:
-                    for opportunity in trade_list[:2]:
-                         if opportunity.actual_profit_percentage >= 0.3:
-                             self.paper_trader.execute_trade(opportunity, trade_amount=100)
+                # Paper Trading (Run only if enabled)
+                if self.config.get("paper_trading", {}).get("enabled", False):
+                    trade_list = verified_opportunities if verified_opportunities else opportunities
+                    if trade_list:
+                        for opportunity in trade_list[:2]:
+                             if opportunity.actual_profit_percentage >= 0.3:
+                                 self.paper_trader.execute_trade(opportunity, trade_amount=100)
                              
                 # --- PHASE 5: Funding Rate Arbitrage (Binance Futures) ---
                 # Run this check less frequently or every cycle (1 call)
-                if cycle_count % 6 == 0 and "binance" in self.exchanges: # Every ~30s
+                # --- PHASE 5: Funding Rate Arbitrage (All Exchanges) ---
+                if cycle_count % 6 == 0:
+                    for exchange_name, exchange in self.exchanges.items():
+                        try:
+                            # Polymorphic call - will be empty for non-supported exchanges
+                            funding_data = await exchange.get_funding_rates()
+                            if not funding_data: continue
+
+                            funding_ops = self.funding_engine.find_opportunities(funding_data)
+                            if funding_ops:
+                                self.logger.info(f"\n🔮 {exchange_name.upper()} FUNDING OPS (Top {min(3, len(funding_ops))})")
+                                self.logger.info("=" * 60)
+                                for i, op in enumerate(funding_ops[:3], 1):
+                                    self.logger.info(f"{i}. {op.pair:<10} | APY: {op.annualized_rate:>6.2f}% 🔥")
+                                    self.logger.info(f"   Rate: {op.funding_rate*100:>6.4f}% | Next: {time.strftime('%H:%M', time.localtime(op.next_funding_time))}")
+                                    self.logger.info("   " + "-" * 56)
+                                self.logger.info("")
+                                
+                                # EXECUTING FUNDING ARB (If Live)
+                                if self.executor.is_live:
+                                    best_opp = funding_ops[0]
+                                    if best_opp.annualized_rate > 15.0:
+                                        await self.executor.execute_funding_trade(best_opp, manual_approval=True)
+                        except Exception as e:
+                            self.logger.error(f"⚠️ {exchange_name} Funding Error: {e}")
+
+                # --- PHASE 10: Spot-Future Basis Arbitrage (Binance Only for now) ---
+                if cycle_count % 12 == 0: # Every ~60s
                     try:
-                        funding_data = await self.exchanges["binance"].get_funding_rates()
-                        funding_ops = self.funding_engine.find_opportunities(funding_data)
-                        
-                        if funding_ops:
-                            self.logger.info(f"\n🔮 FUNDING RATE OPPORTUNITIES (Top {min(3, len(funding_ops))})")
-                            self.logger.info("=" * 60)
-                            for i, op in enumerate(funding_ops[:3], 1):
-                                self.logger.info(f"{i}. {op.pair:<10} | APY: {op.annualized_rate:>6.2f}% 🔥")
-                                self.logger.info(f"   Rate: {op.funding_rate*100:>6.4f}% | Next: {time.strftime('%H:%M', time.localtime(op.next_funding_time))}")
-                                self.logger.info("   " + "-" * 56)
-                            self.logger.info("")
+                        # Only Binance has deep liquid Dated Futures for now
+                        binance = self.exchanges.get("binance")
+                        if binance:
+                            # 1. Get Delivery Prices
+                            delivery_data = await binance.get_delivery_prices()
                             
-                            # EXECUTING FUNDING ARB (If Live)
-                            if self.executor.is_live:
-                                best_opp = funding_ops[0]
-                                # Only auto-execute if APY is very good (> 15%) to cover fees
-                                if best_opp.annualized_rate > 15.0:
-                                    # Execute with manual approval (safety first)
-                                    await self.executor.execute_funding_trade(best_opp, manual_approval=True)
-                                    
+                            # 2. Get Spot Prices (we already have them cached implicitly or can fetch)
+                            # Ideally pass the latest we found in 'find_opportunities' but let's fetch fresh for accuracy
+                            spot_prices = await binance.get_prices(self.config["trading_pairs"])
+                            
+                            # 3. Find Ops
+                            basis_ops = self.basis_engine.find_opportunities(delivery_data, spot_prices)
+                            
+                            if basis_ops:
+                                self.logger.info(f"\n📉 BASIS ARBITRAGE (Risk-Free Yield) - Top {min(3, len(basis_ops))}")
+                                self.logger.info("=" * 60)
+                                for i, op in enumerate(basis_ops[:3], 1):
+                                    self.logger.info(f"{i}. {op.future_symbol:<15} (Exp: {op.days_to_expiry}d) | APR: {op.apr:>6.2f}% 💰")
+                                    self.logger.info(f"   Spot: ${op.spot_price:<8.2f} | Future: ${op.future_price:<8.2f} | Basis: {op.basis_percent:.2f}%")
+                                    self.logger.info("   " + "-" * 56)
+                                self.logger.info("")
                     except Exception as e:
-                        self.logger.error(f"⚠️ Funding Arb Error: {e}")
+                        self.logger.error(f"⚠️ Basis Arb Error: {e}")
                 
                 # Show performance every 10 cycles
                 if cycle_count % 10 == 0:
@@ -170,20 +243,21 @@ class ArbitrageBot:
                 sleep_time = max(0, self.config["update_interval"] - processing_time)
                 await asyncio.sleep(sleep_time)
                 
-                # --- PHASE 2: Check Triangular Arbitrage (Binance Only) ---
-                if "binance" in self.exchanges:
+                # --- PHASE 2: Check Triangular Arbitrage (All Exchanges) ---
+                for exchange_name, exchange in self.exchanges.items():
                     try:
-                        # 1. Get all prices
-                        all_prices = await self.exchanges["binance"].get_all_tickers()
+                        # Polymorphic call
+                        all_prices = await exchange.get_all_tickers()
+                        if not all_prices: continue
                         
-                        # 2. Build graph
-                        self.tri_engine.build_graph("binance", all_prices)
+                        # Build graph
+                        self.tri_engine.build_graph(exchange_name, all_prices)
                         
-                        # 3. Find opportunities
-                        tri_ops = self.tri_engine.find_opportunities("binance")
+                        # Find opportunities
+                        tri_ops = self.tri_engine.find_opportunities(exchange_name)
                         
                         if tri_ops:
-                            self.logger.info(f"\n📐 TRIANGULAR OPPORTUNITIES ({len(tri_ops)})")
+                            self.logger.info(f"\n📐 {exchange_name.upper()} TRIANGULAR OPS ({len(tri_ops)})")
                             self.logger.info("=" * 60)
                             for i, op in enumerate(tri_ops[:3], 1):
                                 path_str = " -> ".join(op.path)
@@ -191,15 +265,17 @@ class ArbitrageBot:
                                 self.logger.info(f"   💰 Profit: {op.profit_percentage:>6.2f}%")
                                 self.logger.info("   " + "-" * 56)
                                 
-                                # Log to DB if profitable enough
                                 if op.profit_percentage > 1.0:
                                     self.db.log_triangular_trade(op)
                                     self.logger.info("   💾 Logged to DB")
                             self.logger.info("")
                     except Exception as e:
-                        print(f"⚠️ Triangular Arb Error: {e}")
+                        print(f"⚠️ {exchange_name} Triangular Error: {e}")
 
                 
+                
+        except asyncio.CancelledError:
+            self.logger.info("\n🛑 Bot task cancelled")
         except KeyboardInterrupt:
             self.logger.info("\n🛑 Bot stopped by user")
             if self.executor.is_live:
@@ -259,7 +335,7 @@ class ArbitrageBot:
             print("🧹 Cleaning up resources...")
             await self.cleanup()
     
-    def display_opportunities(self, opportunities: List[ArbitrageOpportunity]):
+    async def display_opportunities(self, opportunities: List[ArbitrageOpportunity]):
         """Display found arbitrage opportunities with profit info"""
         if not opportunities:
             self.logger.info(f"{time.strftime('%H:%M:%S')} - No opportunities found ")
@@ -318,8 +394,15 @@ class ArbitrageBot:
         self.logger.info("Closing exchange sessions...")
         for exchange_name, exchange in self.exchanges.items():
             try:
+                if hasattr(exchange, 'stop_stream'):
+                    await exchange.stop_stream()
                 await exchange.close_session()
                 self.logger.info(f"✅ Closed {exchange_name} session")
             except Exception as e:
                 self.logger.error(f"❌ Error closing {exchange_name}: {e}")
+        
+        # Close Execution Manager sessions
+        if hasattr(self, 'executor'):
+            await self.executor.cleanup()
+            
         self.logger.info("✅ Cleanup complete!")

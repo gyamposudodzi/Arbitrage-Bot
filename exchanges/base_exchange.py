@@ -17,6 +17,27 @@ class BaseExchangeAPI:
     async def close_session(self):
         if self.session:
             await self.session.close()
+
+    async def get_funding_rates(self) -> List[Dict]:
+        """
+        Fetch real-time funding rates.
+        Returns empty list if not supported.
+        """
+        return []
+
+    async def get_all_tickers(self) -> Dict[str, float]:
+        """
+        Fetch all prices for the exchange (used for Triangular Arb).
+        Returns empty dict if not supported.
+        """
+        return {}
+
+    async def get_trading_pairs(self) -> set:
+        """
+        Fetch all supported trading pairs for the exchange.
+        Returns normalized set of strings {'BTC-USDT', ...}
+        """
+        return set()
     
     async def get_prices(self, pairs: List[str]) -> Dict[str, float]:
         raise NotImplementedError("Subclasses must implement this method")

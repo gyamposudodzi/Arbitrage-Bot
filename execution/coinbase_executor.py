@@ -78,15 +78,14 @@ class CoinbaseOrderExecutor(BaseOrderExecutor):
                 data=body_str,
                 headers=headers
             ) as response:
-                data = await response.json()
-                
                 if response.status == 200:
+                    data = await response.json()
                     if data.get("success"):
                         return {
                             "success": True,
                             "order_id": data.get("order_id"),
-                            "status": "FILLED", # Market orders are usually immediate
-                            "executed_quantity": quantity, # Approximate
+                            "status": "FILLED",
+                            "executed_quantity": quantity,
                             "original_response": data
                         }
                     else:
@@ -95,7 +94,9 @@ class CoinbaseOrderExecutor(BaseOrderExecutor):
                             "error": str(data.get("error_response"))
                         }
                 else:
-                    return {"success": False, "error": f"HTTP {response.status}: {data}"}
+                    error_text = await response.text()
+                    print(f"❌ Coinbase order failed (HTTP {response.status}): {error_text}")
+                    return {"success": False, "error": f"HTTP {response.status}: {error_text}"}
                     
         except Exception as e:
             print(f"❌ Coinbase order error: {e}")
@@ -120,7 +121,8 @@ class CoinbaseOrderExecutor(BaseOrderExecutor):
                             return float(account.get("available_balance", {}).get("value", 0.0))
                     return 0.0
                 else:
-                    print(f"❌ Coinbase balance error: {response.status}")
+                    error_text = await response.text()
+                    print(f"❌ Coinbase balance error (HTTP {response.status}): {error_text}")
                     return 0.0
         except Exception as e:
             print(f"❌ Coinbase balance exception: {e}")

@@ -37,6 +37,9 @@ class CoinbaseAPI(BaseExchangeAPI, StreamingExchangeInterface):
             print(f"Error loading supported pairs: {e}")
             return set()
 
+    async def get_trading_pairs(self) -> set:
+        return await self.get_supported_pairs()
+
     async def get_prices(self, pairs: List[str]) -> Dict[str, float]:
         """
         Fetch ticker prices for given pairs. 

@@ -19,9 +19,12 @@ class ArbitrageEngine:
                 self.streaming_exchanges.add(name)
                 self.price_cache[name] = {}
                 
+                # Use Smart Pair List if available, otherwise config default
+                pairs_to_stream = self.bot.exchange_pairs.get(name, self.bot.config["trading_pairs"])
+                
                 # Run stream in background
                 asyncio.create_task(exchange.start_stream(
-                    self.bot.config["trading_pairs"],
+                    pairs_to_stream,
                     self.update_price_cache
                 ))
     
