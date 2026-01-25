@@ -5,7 +5,7 @@ import hmac
 import json
 import time
 from typing import Dict
-from .base_order import BaseOrderExecutor
+from .base_executor import BaseOrderExecutor
 
 class KuCoinOrderExecutor(BaseOrderExecutor):
     """KuCoin order execution implementation"""

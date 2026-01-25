@@ -4,13 +4,14 @@ from typing import Dict, List
 from models.data_models import ArbitrageOpportunity
 
 class PaperTrader:
-    def __init__(self, initial_balance: float = 1000):
+    def __init__(self, initial_balance: float = 1000, db_manager=None):
         self.initial_balance = initial_balance
         self.balance = initial_balance
         self.positions = {}
         self.trade_history = []
         self.total_trades = 0
         self.profitable_trades = 0
+        self.db = db_manager
         
     def execute_trade(self, opportunity: ArbitrageOpportunity, trade_amount: float = 100):
         """Simulate executing an arbitrage trade"""
@@ -54,6 +55,10 @@ class PaperTrader:
         }
         
         self.trade_history.append(trade_record)
+        
+        # DB LOGGING
+        if self.db:
+            self.db.log_trade(opportunity, trade_amount, net_profit)
         
         print(f"📊 PAPER TRADE EXECUTED:")
         print(f"   {opportunity.pair}: {opportunity.buy_exchange} → {opportunity.sell_exchange}")

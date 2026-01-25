@@ -4,19 +4,29 @@ import json
 from typing import Dict, List
 from exchanges import BinanceAPI, CoinbaseAPI, KrakenAPI, KuCoinAPI, GateIOAPI, BybitAPI, OKXAPI
 from core.arbitrage_engine import ArbitrageEngine
+from core.triangular_arb import TriangularArbitrageEngine
+from core.database_manager import DatabaseManager
+from core.funding_arb import FundingRateArbitrageEngine
 from models.data_models import ArbitrageOpportunity
 from core.paper_trader import PaperTrader
-from core.live_trader import LiveTrader  # NEW
+from execution.manager import ExecutionManager  # NEW
+from core.fee_manager import FeeManager # NEW
+from core.logger import setup_logger
 
 class ArbitrageBot:
     def __init__(self, config_file: str = "config.json"):
+        self.logger = setup_logger("ArbitrageBot")
         self.config = self.load_config(config_file)
         self.exchanges = {}
         self.opportunities = []
         self.setup_exchanges()
-        self.paper_trader = PaperTrader(initial_balance=1000)
-        self.live_trader = LiveTrader(self)  # NEW
-        self.live_trader.is_live = self.config.get("live_trading", {}).get("enabled", False)
+        self.db = DatabaseManager()  # NEW: Initialize Database
+        self.paper_trader = PaperTrader(initial_balance=1000, db_manager=self.db)
+        self.executor = ExecutionManager(self)  # NEW
+        self.executor.is_live = self.config.get("live_trading", {}).get("enabled", False)
+        self.fee_manager = FeeManager(self.executor) # NEW
+        self.tri_engine = TriangularArbitrageEngine(self)
+        self.funding_engine = FundingRateArbitrageEngine(self)
         
     def load_config(self, config_file: str) -> Dict:
         """Load configuration from JSON file"""
@@ -68,15 +78,22 @@ class ArbitrageBot:
         """Main execution loop with live trading"""
         engine = ArbitrageEngine(self)
         
-        mode = "LIVE TRADING 🚀" if self.live_trader.is_live else "PAPER TRADING 💰"
-        print(f"Arbitrage Bot Started! {mode}")
-        print("=" * 80)
+        # Start WebSocket Streams
+        await engine.start_streaming()
+        self.logger.info("⏳ Waiting 5 seconds for streams to warm up...")
+        await asyncio.sleep(5)
+
         
-        if self.live_trader.is_live:
+        
+        mode = "LIVE TRADING 🚀" if self.executor.is_live else "PAPER TRADING 💰"
+        self.logger.info(f"Arbitrage Bot Started! {mode}")
+        self.logger.info("=" * 80)
+        
+        if self.executor.is_live:
             print("🔐 LIVE TRADING ENABLED - Trades will execute with REAL MONEY!")
             print("💰 Starting with safety limits:")
-            print(f"   Max trade size: ${self.live_trader.max_trade_size}")
-            print(f"   Daily loss limit: ${self.live_trader.daily_loss_limit}")
+            print(f"   Max trade size: ${self.executor.max_trade_size}")
+            print(f"   Daily loss limit: ${self.executor.daily_loss_limit}")
             print("   Manual approval required for each trade")
         
         try:
@@ -86,22 +103,65 @@ class ArbitrageBot:
                 cycle_count += 1
                 
                 opportunities = await engine.find_opportunities()
-                self.display_opportunities(opportunities)
                 
-                if opportunities and self.live_trader.is_live:
-                    # Execute live trades for high-confidence opportunities
-                    best_opportunity = opportunities[0]  # Highest profit opportunity
-                    if best_opportunity.actual_profit_percentage >= 0.3:
-                        await self.live_trader.execute_live_trade(best_opportunity, manual_approval=True)
+                # --- PHASE 4: Liquidity Verification (VWAP) ---
+                # Check top 3 opportunities for actual liquidity depth
+                verified_opportunities = []
+                for opp in opportunities[:3]:
+                    # Verify against $100 trade size (or config value)
+                    verified_opp = await engine.verify_liquidity(opp, trade_amount=100.0)
+                    if verified_opp.actual_profit_percentage > 0: # Still profitable?
+                         verified_opportunities.append(verified_opp)
                 
-                elif opportunities:  # Paper trading
-                    for opportunity in opportunities[:2]:  # Top 2 opportunities
-                        if opportunity.actual_profit_percentage >= 0.3:
-                            self.paper_trader.execute_trade(opportunity, trade_amount=100)
+                # If we have verified ones, display them. Otherwise show raw.
+                if verified_opportunities:
+                    # Update the main list with verified versions at the top
+                    self.display_opportunities(verified_opportunities)
+                    
+                    if self.executor.is_live:
+                         best_opportunity = verified_opportunities[0]
+                         if best_opportunity.actual_profit_percentage >= 0.3:
+                             await self.executor.execute_trade(best_opportunity, manual_approval=True)
+                else:
+                    self.display_opportunities(opportunities)
+                
+                # Paper Trading (use verified if available)
+                trade_list = verified_opportunities if verified_opportunities else opportunities
+                if trade_list:
+                    for opportunity in trade_list[:2]:
+                         if opportunity.actual_profit_percentage >= 0.3:
+                             self.paper_trader.execute_trade(opportunity, trade_amount=100)
+                             
+                # --- PHASE 5: Funding Rate Arbitrage (Binance Futures) ---
+                # Run this check less frequently or every cycle (1 call)
+                if cycle_count % 6 == 0 and "binance" in self.exchanges: # Every ~30s
+                    try:
+                        funding_data = await self.exchanges["binance"].get_funding_rates()
+                        funding_ops = self.funding_engine.find_opportunities(funding_data)
+                        
+                        if funding_ops:
+                            self.logger.info(f"\n🔮 FUNDING RATE OPPORTUNITIES (Top {min(3, len(funding_ops))})")
+                            self.logger.info("=" * 60)
+                            for i, op in enumerate(funding_ops[:3], 1):
+                                self.logger.info(f"{i}. {op.pair:<10} | APY: {op.annualized_rate:>6.2f}% 🔥")
+                                self.logger.info(f"   Rate: {op.funding_rate*100:>6.4f}% | Next: {time.strftime('%H:%M', time.localtime(op.next_funding_time))}")
+                                self.logger.info("   " + "-" * 56)
+                            self.logger.info("")
+                            
+                            # EXECUTING FUNDING ARB (If Live)
+                            if self.executor.is_live:
+                                best_opp = funding_ops[0]
+                                # Only auto-execute if APY is very good (> 15%) to cover fees
+                                if best_opp.annualized_rate > 15.0:
+                                    # Execute with manual approval (safety first)
+                                    await self.executor.execute_funding_trade(best_opp, manual_approval=True)
+                                    
+                    except Exception as e:
+                        self.logger.error(f"⚠️ Funding Arb Error: {e}")
                 
                 # Show performance every 10 cycles
                 if cycle_count % 10 == 0:
-                    if self.live_trader.is_live:
+                    if self.executor.is_live:
                         self.show_live_performance()
                     else:
                         self.show_paper_performance()
@@ -110,9 +170,39 @@ class ArbitrageBot:
                 sleep_time = max(0, self.config["update_interval"] - processing_time)
                 await asyncio.sleep(sleep_time)
                 
+                # --- PHASE 2: Check Triangular Arbitrage (Binance Only) ---
+                if "binance" in self.exchanges:
+                    try:
+                        # 1. Get all prices
+                        all_prices = await self.exchanges["binance"].get_all_tickers()
+                        
+                        # 2. Build graph
+                        self.tri_engine.build_graph("binance", all_prices)
+                        
+                        # 3. Find opportunities
+                        tri_ops = self.tri_engine.find_opportunities("binance")
+                        
+                        if tri_ops:
+                            self.logger.info(f"\n📐 TRIANGULAR OPPORTUNITIES ({len(tri_ops)})")
+                            self.logger.info("=" * 60)
+                            for i, op in enumerate(tri_ops[:3], 1):
+                                path_str = " -> ".join(op.path)
+                                self.logger.info(f"{i}. 🔄 Path  : {path_str}")
+                                self.logger.info(f"   💰 Profit: {op.profit_percentage:>6.2f}%")
+                                self.logger.info("   " + "-" * 56)
+                                
+                                # Log to DB if profitable enough
+                                if op.profit_percentage > 1.0:
+                                    self.db.log_triangular_trade(op)
+                                    self.logger.info("   💾 Logged to DB")
+                            self.logger.info("")
+                    except Exception as e:
+                        print(f"⚠️ Triangular Arb Error: {e}")
+
+                
         except KeyboardInterrupt:
-            print("\n🛑 Bot stopped by user")
-            if self.live_trader.is_live:
+            self.logger.info("\n🛑 Bot stopped by user")
+            if self.executor.is_live:
                 self.show_live_performance()
             else:
                 self.show_paper_performance()
@@ -133,13 +223,13 @@ class ArbitrageBot:
     def show_live_performance(self):
         """Show live trading performance"""
         print(f"\n📈 LIVE TRADING PERFORMANCE:")
-        print(f"   Total P&L: ${self.live_trader.total_pnl:.4f}")
-        print(f"   Total Trades: {len(self.live_trader.trade_history)}")
-        print(f"   Daily Loss Limit: ${self.live_trader.daily_loss_limit}")
-        if self.live_trader.trade_history:
-            last_trade = self.live_trader.trade_history[-1]
-            print(f"   Last Trade: {last_trade['pair']} - ${last_trade.get('estimated_profit', 0):.4f}")
-        print("-" * 50)
+        print(f"   Total P&L: ${self.executor.total_pnl:.4f}")
+        print(f"   Total Trades: {len(self.executor.trade_history)}")
+        print(f"   Daily Loss Limit: ${self.executor.daily_loss_limit}")
+        if self.executor.trade_history:
+            last_trade = self.executor.trade_history[-1]
+            self.logger.info(f"   Last Trade: {last_trade['pair']} - ${last_trade.get('profit', 0):.4f}")
+        self.logger.info("-" * 50)
     
     async def run_single_exchange_test(self):
         """Test with only specific exchanges"""
@@ -172,12 +262,12 @@ class ArbitrageBot:
     def display_opportunities(self, opportunities: List[ArbitrageOpportunity]):
         """Display found arbitrage opportunities with profit info"""
         if not opportunities:
-            print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} - No PROFITABLE arbitrage opportunities found")
+            self.logger.info(f"{time.strftime('%H:%M:%S')} - No opportunities found ")
             return
         
-        mode_indicator = "🚀 LIVE" if self.live_trader.is_live else "💰 PAPER"
-        print(f"\n{time.strftime('%Y-%m-%d %H:%M:%S')} - Found {len(opportunities)} PROFITABLE opportunities ({mode_indicator}):")
-        print("-" * 80)
+        mode_indicator = "🚀 LIVE" if self.executor.is_live else "💰 PAPER"
+        self.logger.info(f"\n💎 FOUND {len(opportunities)} OPPORTUNITIES ({mode_indicator})")
+        self.logger.info("=" * 60)
         
         for i, opp in enumerate(opportunities, 1):
             # Use more decimals for low-priced tokens
@@ -186,25 +276,50 @@ class ArbitrageBot:
             else:
                 price_format = ".4f"
             
-            print(f"{i}. {opp.pair}")
-            print(f"   BUY : {opp.buy_exchange:10} @ ${opp.buy_price:{price_format}} (fee: {opp.buy_fee*100:.2f}%)")
-            print(f"   SELL: {opp.sell_exchange:10} @ ${opp.sell_price:{price_format}} (fee: {opp.sell_fee*100:.2f}%)")
-            print(f"   GROSS Spread: {opp.spread_percentage:.4f}%")
-            print(f"   NET Profit: {opp.actual_profit_percentage:.4f}% ✅")
-            print(f"   Total Fees: {(opp.buy_fee + opp.sell_fee)*100:.2f}%")
+            # Icon based on net profit
+            status_icon = "✅" if opp.actual_profit_percentage > 0 else "⚠️"
+            if opp.actual_profit_percentage > 0.5: status_icon = "🔥"
             
+            self.logger.info(f"{i}. {opp.pair} {status_icon}")
+            self.logger.info(f"   🟢 BUY : {opp.buy_exchange:<12} @ ${opp.buy_price:{price_format}}")
+            self.logger.info(f"   🔴 SELL: {opp.sell_exchange:<12} @ ${opp.sell_price:{price_format}}")
+            self.logger.info(f"   📊 SPRD: {opp.spread_percentage:>6.2f}%  |  NET: {opp.actual_profit_percentage:>6.2f}%")
+            self.logger.info("   " + "-" * 56)
+            
+            # Fee Calculation
+            fee_cost = 0.0
+            net_profit_pct = opp.actual_profit_percentage
+            
+            if self.executor.is_live and i == 1: # Only detailed check for top one to save APIs
+                 # Estimate Withdrawal Fee
+                 try:
+                     pair_base = opp.pair.split("-")[0]
+                     w_fee = await self.fee_manager.get_withdrawal_fee(opp.buy_exchange, pair_base)
+                     w_cost_usdt = w_fee * opp.buy_price
+                     
+                     # Subtract from profit (assuming $100 trade)
+                     trade_size = self.executor.max_trade_size
+                     gross_profit_usd = trade_size * (opp.actual_profit_percentage / 100)
+                     net_profit_usd = gross_profit_usd - w_cost_usdt
+                     net_profit_pct = (net_profit_usd / trade_size) * 100
+                     
+                     self.logger.info(f"   💸 W.Fee: {w_fee:.5f} {pair_base} (~${w_cost_usdt:.2f})")
+                     self.logger.info(f"   📉 Net Profit: ${net_profit_usd:.2f} ({net_profit_pct:.2f}%)")
+                 except Exception as e:
+                     self.logger.info(f"   ⚠️ Fee Calc Error: {e}")
+
             # Show live trading indicator for top opportunity
-            if i == 1 and self.live_trader.is_live and opp.actual_profit_percentage >= 0.3:
-                print(f"   🎯 LIVE TRADE CANDIDATE - Will prompt for execution")
-            print()
+            if i == 1 and self.executor.is_live and net_profit_pct >= 0.3:
+                self.logger.info(f"   🎯 EXECUTING LIVE TRADE...")
+            self.logger.info("")
     
     async def cleanup(self):
         """Clean up resources properly"""
-        print("Closing exchange sessions...")
+        self.logger.info("Closing exchange sessions...")
         for exchange_name, exchange in self.exchanges.items():
             try:
                 await exchange.close_session()
-                print(f"✅ Closed {exchange_name} session")
+                self.logger.info(f"✅ Closed {exchange_name} session")
             except Exception as e:
-                print(f"❌ Error closing {exchange_name}: {e}")
-        print("✅ Cleanup complete!")
+                self.logger.error(f"❌ Error closing {exchange_name}: {e}")
+        self.logger.info("✅ Cleanup complete!")

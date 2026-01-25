@@ -1,4 +1,30 @@
-.env
-*.env
-*.json
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environment
+venv/
+env/
+.venv/
+
+# Environment Variables (Secrets)
+.env
+
+# Configuration (Secrets)
+config.json
+
+# Data & Logs
+data/
+logs/
+*.log
+*.db
+*.sqlite
+
+# IDEs
+.vscode/
+.idea/
+
+# Documentation
+*.md
+!README.md

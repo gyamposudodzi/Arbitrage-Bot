@@ -1,12 +1,17 @@
 import aiohttp
-from typing import Dict, List
+import asyncio
+import json
+from typing import Dict, List, Callable, Awaitable
 from .base_exchange import BaseExchangeAPI
+from .streaming_interface import StreamingExchangeInterface
 
-class BybitAPI(BaseExchangeAPI):
+class BybitAPI(BaseExchangeAPI, StreamingExchangeInterface):
     def __init__(self, config: Dict):
         super().__init__(config)
         self.name = "bybit"
         self.base_url = "https://api.bybit.com"
+        self.ws = None
+        self.running = False
     
     def normalize_pair(self, pair: str) -> str:
         # Convert BTC-USDT to BTCUSDT
@@ -35,20 +40,13 @@ class BybitAPI(BaseExchangeAPI):
                                 except (ValueError, TypeError):
                                     continue
                         
-                        # Debug: Show exact matches for our pairs
-                       # print(f"🔍 Bybit exact pair matching:")
-                        
                         for pair in pairs:
                             exact_symbol = self.normalize_pair(pair)  # BTC-USDT → BTCUSDT
                             
                             if exact_symbol in all_tickers:
                                 prices[pair] = all_tickers[exact_symbol]
-                                #print(f"✅ Bybit {pair} → {exact_symbol}: ${prices[pair]:.4f}")
                             else:
-                                # If exact match not found, skip this pair
-                                #print(f"❌ Bybit {pair}: {exact_symbol} not found in available pairs")
                                 continue
-                                # DO NOT try to match with similar symbols - this causes wrong matches!
                     
                     else:
                         print(f"❌ Bybit API error: {data['retMsg']}")
@@ -59,3 +57,70 @@ class BybitAPI(BaseExchangeAPI):
             print(f"❌ Bybit exception: {e}")
         
         return prices
+
+    async def start_stream(self, pairs: List[str], callback: Callable[[str, float, str], Awaitable[None]]):
+        """Streaming implementation for Bybit V5"""
+        self.running = True
+        session = await self.get_session()
+        
+        # Prepare topics
+        # Bybit topic: tickers.<symbol>
+        # e.g. tickers.BTCUSDT
+        
+        ws_map = {} # BTCUSDT -> BTC-USDT
+        topics = []
+        
+        for pair in pairs:
+            symbol = self.normalize_pair(pair)
+            topic = f"tickers.{symbol}"
+            topics.append(topic)
+            ws_map[symbol] = pair
+            
+        print(f"🔌 Connecting to Bybit WebSocket for {len(topics)} pairs...")
+        ws_url = "wss://stream.bybit.com/v5/public/spot"
+        
+        try:
+            async with session.ws_connect(ws_url) as ws:
+                self.ws = ws
+                
+                # Subscribe (Bybit allows max 10 topics per request, might need batching logic if thousands)
+                # For small < 50 pairs, one req is usually fine.
+                subscribe_msg = {
+                    "op": "subscribe",
+                    "args": topics
+                }
+                await ws.send_json(subscribe_msg)
+                
+                async for msg in ws:
+                    if not self.running:
+                        break
+                    
+                    if msg.type == aiohttp.WSMsgType.TEXT:
+                        payload = json.loads(msg.data)
+                        
+                        # Handle Pong? Bybit sends auto-ping? We can ignore for now.
+                        
+                        topic = payload.get("topic")
+                        data = payload.get("data")
+                        
+                        if topic and data and topic.startswith("tickers."):
+                            symbol = data.get("symbol") # BTCUSDT
+                            bid_price = data.get("bid1Price")
+                            
+                            if symbol and bid_price:
+                                if symbol in ws_map:
+                                    original_pair = ws_map[symbol]
+                                    await callback(original_pair, float(bid_price), self.name)
+                                        
+                    elif msg.type == aiohttp.WSMsgType.ERROR:
+                        print(f"❌ Bybit WS Error: {ws.exception()}")
+                        break
+                        
+        except Exception as e:
+            print(f"❌ Bybit Connection Failed: {e}")
+            self.running = False
+
+    async def stop_stream(self):
+        self.running = False
+        if self.ws:
+            await self.ws.close()

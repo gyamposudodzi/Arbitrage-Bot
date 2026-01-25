@@ -3,7 +3,7 @@ import time
 import hmac
 import hashlib
 from typing import Dict
-from .base_order import BaseOrderExecutor
+from .base_executor import BaseOrderExecutor
 
 class BinanceOrderExecutor(BaseOrderExecutor):
     """Binance order execution implementation"""
@@ -21,6 +21,56 @@ class BinanceOrderExecutor(BaseOrderExecutor):
             hashlib.sha256
         ).hexdigest()
     
+    async def place_futures_order(self, symbol: str, side: str, quantity: float, leverage: int = 1) -> Dict:
+        """
+        Place a Futures order on Binance (USD-M).
+        """
+        try:
+            self.futures_url = "https://fapi.binance.com/fapi/v1"
+            timestamp = int(time.time() * 1000)
+            
+            # 1. Set Leverage first (optional, but good practice)
+            # We assume isolated margin for safety usually, but API defaults to Cross often.
+            # For this MVP we just place the order.
+            
+            params = {
+                'symbol': symbol,
+                'side': side.upper(),
+                'type': 'MARKET',
+                'quantity': quantity,
+                'timestamp': timestamp
+            }
+            
+            # Futures signature is same generation logic
+            params['signature'] = self._generate_signature(params)
+            
+            session = await self.get_session()
+            async with session.post(
+                f"{self.futures_url}/order",
+                params=params,
+                headers={'X-MBX-APIKEY': self.api_key}
+            ) as response:
+                data = await response.json()
+                
+                if response.status == 200:
+                    print(f"✅ Binance Futures {side} executed: {quantity} {symbol}")
+                    return {
+                        'success': True,
+                        'order_id': data.get('orderId'),
+                        'status': data.get('status'),
+                        'executed_quantity': float(data.get('executedQty', 0))
+                    }
+                else:
+                    print(f"❌ Binance Futures order failed: {data}")
+                    return {
+                        'success': False,
+                        'error': data.get('msg', 'Unknown error')
+                    }
+                    
+        except Exception as e:
+            print(f"❌ Binance Futures error: {e}")
+            return {'success': False, 'error': str(e)}
+
     async def place_market_order(self, symbol: str, side: str, quantity: float) -> Dict:
         """Place a market order on Binance"""
         try:
@@ -114,4 +164,48 @@ class BinanceOrderExecutor(BaseOrderExecutor):
                 
         except Exception as e:
             print(f"❌ Binance order status error: {e}")
+            return {}
+
+    async def get_withdrawal_info(self, asset: str) -> Dict:
+        """
+        Get withdrawal fee and min amount for an asset.
+        Returns: {'fee': float, 'min_withdraw': float, 'network': str}
+        """
+        try:
+            # Endpoint: /sapi/v1/capital/config/getall
+            # This is a signed endpoint
+            sapi_url = "https://api.binance.com/sapi/v1"
+            timestamp = int(time.time() * 1000)
+            params = {'timestamp': timestamp}
+            params['signature'] = self._generate_signature(params)
+            
+            session = await self.get_session()
+            async with session.get(
+                f"{sapi_url}/capital/config/getall",
+                params=params,
+                headers={'X-MBX-APIKEY': self.api_key}
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    # Data is list of all coins
+                    for coin_info in data:
+                        if coin_info['coin'] == asset.upper():
+                            # Find best network (usually one with lowest fee or specific one)
+                            # For Arb, we usually use the cheapest or the one matching the destination.
+                            # For simplicity, let's take the first non-congested one or just the first.
+                            
+                            networks = coin_info.get('networkList', [])
+                            if networks:
+                                # Simple heuristic: Pick lowest fee
+                                best_net = min(networks, key=lambda x: float(x.get('withdrawFee', 999)))
+                                return {
+                                    'fee': float(best_net.get('withdrawFee', 0)),
+                                    'min_withdraw': float(best_net.get('withdrawMin', 0)),
+                                    'network': best_net.get('network')
+                                }
+                    return {}
+                else:
+                    return {}
+        except Exception as e:
+            print(f"❌ Binance withdrawal info error: {e}")
             return {}
