@@ -133,6 +133,13 @@ class ExecutionManager:
         try:
             quantity = safe_trade_amount / opportunity.buy_price
             
+            # Check Order Type (Maker vs Taker)
+            order_type = self.bot.config.get("order_type", "taker")
+            
+            if order_type == "maker" and opportunity.buy_exchange == "binance":
+                return await self.execute_maker_taker_trade(opportunity, safe_trade_amount, buy_exec, sell_exec)
+
+            # Taker (Original) Logic
             # Buy
             print(f"📥 Buying on {opportunity.buy_exchange}...")
             buy_res = await buy_exec.place_market_order(
@@ -174,6 +181,97 @@ class ExecutionManager:
                 
         except Exception as e:
             print(f"❌ Execution Exception: {e}")
+            return False
+
+    async def execute_maker_taker_trade(self, opportunity: ArbitrageOpportunity, trade_amount_usd: float, buy_exec, sell_exec) -> bool:
+        """
+        Execute trade using Maker (Limit) Order for Entry.
+        1. Place Limit Buy at Best Bid
+        2. Wait for fill (Poll)
+        3. If Filled -> Taker Sell
+        4. If Timeout -> Cancel
+        """
+        print(f"📉 MAKER MODE: Placing Limit Buy on {opportunity.buy_exchange}...")
+        
+        # Calculate Price & Qty
+        # We want to be at the TIP (best bid) to get filled fast
+        limit_price = opportunity.buy_price 
+        quantity = trade_amount_usd / limit_price
+        
+        # 1. Place Limit Order
+        buy_res = await buy_exec.place_limit_order(
+            self.bot.exchanges[opportunity.buy_exchange].normalize_pair(opportunity.pair),
+            'buy',
+            price=limit_price,
+            quantity=quantity
+        )
+        
+        if not buy_res.get('success'):
+            print(f"❌ Maker Buy Failed: {buy_res.get('error')}")
+            return False
+            
+        order_id = buy_res.get('order_id')
+        print(f"   ⏳ Limit Order Placed (ID: {order_id}). Waiting for fill...")
+        
+        # 2. Poll for Fill (Max 20 seconds)
+        max_wait = 20
+        start_time = time.time()
+        filled = False
+        
+        while (time.time() - start_time) < max_wait:
+            status_res = await buy_exec.get_order_status(order_id)
+            status = status_res.get('status')
+            
+            if status == 'FILLED':
+                print("   ✅ Limit Order FILLED! Executing Taker Sell...")
+                filled = True
+                break
+            elif status == 'CANCELED' or status == 'REJECTED':
+                print("   ❌ Limit Order was canceled/rejected.")
+                return False
+                
+            await asyncio.sleep(2) # Check every 2s
+            
+        if not filled:
+            print("   ⏰ Timeout waiting for fill. Canceling order...")
+            try:
+                # Cancel Logic (Auto-Cleanup)
+                await buy_exec.cancel_order(
+                    self.bot.exchanges[opportunity.buy_exchange].normalize_pair(opportunity.pair),
+                    order_id
+                )
+                print("   ✅ Order successfully canceled. Funds released.")
+            except Exception as e:
+                print(f"   ❌ Failed to cancel order: {e}. Please check manually!")
+                
+            return False
+            
+        # 3. Execute Taker Sell (Exit)
+        print(f"📤 Selling on {opportunity.sell_exchange} (Taker)...")
+        sell_res = await sell_exec.place_market_order(
+            self.bot.exchanges[opportunity.sell_exchange].normalize_pair(opportunity.pair),
+            'sell',
+            quantity
+        )
+        
+        if sell_res.get('success'):
+            profit = trade_amount_usd * opportunity.actual_profit_percentage / 100
+            # Maker fees are lower, so profit might be higher! 
+            # We assume standard arb calc for now.
+            self.total_pnl += profit
+            print(f"✅ MAKER-TAKER COMPLETE! Profit: ${profit:.4f}")
+            self.trade_history.append({
+                'timestamp': time.time(),
+                'pair': opportunity.pair,
+                'profit': profit,
+                'type': 'MAKER_TAKER',
+                'buy_id': order_id,
+                'sell_id': sell_res.get('order_id')
+            })
+            return True
+        else:
+            print(f"❌ Sell Failed: {sell_res.get('error')}")
+            print("⚠️  CRITICAL: Swap completed but Sell failed. You hold asset.")
             return False
 
     async def execute_parallel_trade(self, opportunity: ArbitrageOpportunity) -> bool:
@@ -281,13 +379,13 @@ class ExecutionManager:
             return False
             
         # Currently only supporting Binance for Funding Arb
-        if opportunity.exchange != "binance":
-            print(f"❌ Funding execution only supported for Binance (got {opportunity.exchange})")
-            return False
+        # if opportunity.exchange != "binance":
+        #    print(f"❌ Funding execution only supported for Binance (got {opportunity.exchange})")
+        #    return False
             
-        executor = self.executors.get("binance")
+        executor = self.executors.get(opportunity.exchange)
         if not executor:
-            print("❌ Binance executor not available")
+            print(f"❌ {opportunity.exchange} executor not available")
             return False
             
         print(f"🚀 EXECUTING FUNDING ARB: {opportunity.pair}")

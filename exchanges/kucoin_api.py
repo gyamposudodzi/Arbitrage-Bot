@@ -18,6 +18,43 @@ class KuCoinAPI(BaseExchangeAPI, StreamingExchangeInterface):
         # Convert BTC-USDT to BTC-USDT (KuCoin uses dashes)
         return pair.replace("-", "-")
     
+    async def get_funding_rates(self) -> List[Dict]:
+        """
+        Fetch real-time funding rates from KuCoin Futures.
+        """
+        session = await self.get_session()
+        funding_data = []
+        try:
+            # KuCoin Futures Endpoint (Different from Spot)
+            url = "https://api-futures.kucoin.com/api/v1/contracts/active"
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data['code'] == '200000':
+                        for item in data['data']:
+                            # KuCoin Symbol: XBTUSDTM -> Need to map to BTC-USDT
+                            symbol = item['symbol']
+                            
+                            # Simple Mapping Logic
+                            # If starts with XBT, it's BTC. 
+                            pair_name = symbol.replace("XBT", "BTC").replace("USDTM", "-USDT")
+                            
+                            # Only handle USDT-Margined
+                            if "USDT" not in symbol: continue
+
+                            funding_data.append({
+                                "symbol": pair_name, # Normalized
+                                "lastFundingRate": item.get('fundingFeeRate', 0),
+                                "markPrice": item.get('markPrice', 0),
+                                "nextFundingTime": item.get('nextFundingRateTime')
+                            })
+                    else:
+                        print(f"KuCoin funding error: {data.get('msg')}")
+        except Exception as e:
+            print(f"KuCoin funding exception: {e}")
+            
+        return funding_data
+
     async def get_prices(self, pairs: List[str]) -> Dict[str, float]:
         prices = {}
         session = await self.get_session()

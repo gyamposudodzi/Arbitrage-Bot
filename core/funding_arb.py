@@ -7,7 +7,7 @@ class FundingRateArbitrageEngine:
         self.bot = bot
         self.min_annual_rate = 10.0 # Minimum 10% APY to consider
         
-    def find_opportunities(self, funding_data: List[Dict]) -> List[FundingOpportunity]:
+    def find_opportunities(self, funding_data: List[Dict], exchange_name: str = "binance") -> List[FundingOpportunity]:
         """
         Analyze funding data and return profitable opportunities.
         """
@@ -35,7 +35,7 @@ class FundingRateArbitrageEngine:
                     if annualized_rate >= self.min_annual_rate:
                         opp = FundingOpportunity(
                             pair=symbol,
-                            exchange="binance",
+                            exchange=exchange_name,
                             funding_rate=last_funding_rate,
                             annualized_rate=annualized_rate,
                             next_funding_time=next_funding_time,

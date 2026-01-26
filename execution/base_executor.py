@@ -38,6 +38,10 @@ class BaseOrderExecutor(abc.ABC):
         """Check order status - must be implemented by subclasses"""
         pass
     
-    async def cancel_order(self, order_id: str) -> bool:
-        """Cancel an order - optional to implement"""
+    async def cancel_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel an order"""
         raise NotImplementedError("Cancel order not implemented for this exchange")
+
+    async def withdraw(self, asset: str, amount: float, address: str, network: str = None) -> bool:
+        """Withdraw funds to external address"""
+        raise NotImplementedError("Withdraw not implemented for this exchange")

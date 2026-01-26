@@ -79,6 +79,55 @@ class BybitOrderExecutor(BaseOrderExecutor):
             print(f"❌ Bybit order exception: {e}")
             return {"success": False, "error": str(e)}
 
+    async def place_futures_order(self, symbol: str, side: str, quantity: float) -> Dict:
+        """
+        Place a Perpetual Future Order (Linear).
+        Used for Funding Rate Arbitrage (Shorting).
+        """
+        try:
+            endpoint = "/v5/order/create"
+            timestamp = str(int(time.time() * 1000))
+            recv_window = "5000"
+            clean_symbol = symbol.replace("-", "") # BTC-USDT -> BTCUSDT
+            
+            # Bybit V5 Linear payload
+            payload = {
+                "category": "linear",
+                "symbol": clean_symbol,
+                "side": side.capitalize(),
+                "orderType": "Market",
+                "qty": str(quantity),
+                "positionIdx": 0, # 0 = One-Way Mode (Standard), 1/2 = Hedge Mode. Assuming 0.
+            }
+            body_str = json.dumps(payload)
+            signature = self._generate_signature(body_str, timestamp, recv_window)
+            
+            headers = {
+                "X-BAPI-API-KEY": self.api_key,
+                "X-BAPI-TIMESTAMP": timestamp,
+                "X-BAPI-SIGN": signature,
+                "X-BAPI-RECV-WINDOW": recv_window,
+                "Content-Type": "application/json"
+            }
+            
+            session = await self.get_session()
+            async with session.post(f"{self.base_url}{endpoint}", data=body_str, headers=headers) as response:
+                result = await response.json()
+                if result.get("retCode") == 0:
+                    print(f"✅ Bybit Futures {side} executed: {quantity} {symbol}")
+                    return {
+                        "success": True,
+                        "order_id": result["result"]["orderId"],
+                        "status": "FILLED",
+                        "executed_quantity": quantity
+                    }
+                else:
+                    return {"success": False, "error": result.get("retMsg")}
+                    
+        except Exception as e:
+            print(f"❌ Bybit Futures exception: {e}")
+            return {"success": False, "error": str(e)}
+
     async def get_balance(self, asset: str) -> float:
         """Get Unified/Spot wallet balance"""
         try:

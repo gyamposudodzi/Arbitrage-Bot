@@ -71,6 +71,51 @@ class BinanceOrderExecutor(BaseOrderExecutor):
             print(f"❌ Binance Futures error: {e}")
             return {'success': False, 'error': str(e)}
 
+    async def place_limit_order(self, symbol: str, side: str, price: float, quantity: float, time_in_force: str = "GTC") -> Dict:
+        """
+        Place a Limit Order (Maker).
+        time_in_force: GTC (Good Till Cancel), IOC (Immediate or Cancel), FOK (Fill or Kill)
+        """
+        try:
+            timestamp = int(time.time() * 1000)
+            params = {
+                'symbol': symbol,
+                'side': side.upper(),
+                'type': 'LIMIT',
+                'timeInForce': time_in_force,
+                'quantity': quantity,
+                'price': price,
+                'timestamp': timestamp
+            }
+            
+            params['signature'] = self._generate_signature(params)
+            
+            session = await self.get_session()
+            async with session.post(
+                f"{self.base_url}/order",
+                params=params,
+                headers={'X-MBX-APIKEY': self.api_key}
+            ) as response:
+                data = await response.json()
+                
+                if response.status == 200:
+                    print(f"✅ Binance Limit {side} placed: {quantity} @ {price}")
+                    return {
+                        'success': True,
+                        'order_id': data.get('orderId'),
+                        'status': data.get('status'),
+                        'executed_quantity': float(data.get('executedQty', 0))
+                    }
+                else:
+                    print(f"❌ Binance Limit order failed: {data}")
+                    return {
+                        'success': False,
+                        'error': data.get('msg', 'Unknown error')
+                    }
+        except Exception as e:
+            print(f"❌ Binance Limit Exception: {e}")
+            return {'success': False, 'error': str(e)}
+
     async def place_market_order(self, symbol: str, side: str, quantity: float) -> Dict:
         """Place a market order on Binance"""
         try:
@@ -143,6 +188,35 @@ class BinanceOrderExecutor(BaseOrderExecutor):
             print(f"❌ Binance balance error: {e}")
             return 0.0
     
+    async def cancel_order(self, symbol: str, order_id: str) -> bool:
+        """Cancel an open order on Binance"""
+        try:
+            timestamp = int(time.time() * 1000)
+            params = {
+                'symbol': symbol,
+                'orderId': order_id,
+                'timestamp': timestamp
+            }
+            params['signature'] = self._generate_signature(params)
+            
+            session = await self.get_session()
+            async with session.delete(
+                f"{self.base_url}/order",
+                params=params,
+                headers={'X-MBX-APIKEY': self.api_key}
+            ) as response:
+                data = await response.json()
+                
+                if response.status == 200:
+                    print(f"✅ Binance order {order_id} CANCELED.")
+                    return True
+                else:
+                    print(f"❌ Failed to cancel order: {data}")
+                    return False
+        except Exception as e:
+            print(f"❌ Cancel exception: {e}")
+            return False
+    
     async def get_order_status(self, order_id: str) -> Dict:
         """Check order status on Binance"""
         try:
@@ -207,5 +281,43 @@ class BinanceOrderExecutor(BaseOrderExecutor):
                 else:
                     return {}
         except Exception as e:
-            print(f"❌ Binance withdrawal info error: {e}")
-            return {}
+    async def withdraw(self, asset: str, amount: float, address: str, network: str = None) -> bool:
+        """
+        Withdraw funds from Binance.
+        Requires SAPI (Spot API) permissions and IP Whitelist on API Key.
+        """
+        try:
+            # POST /sapi/v1/capital/withdraw/apply
+            sapi_url = "https://api.binance.com/sapi/v1"
+            timestamp = int(time.time() * 1000)
+            
+            params = {
+                'coin': asset.upper(),
+                'address': address,
+                'amount': amount,
+                'timestamp': timestamp
+            }
+            if network:
+                params['network'] = network
+                
+            params['signature'] = self._generate_signature(params)
+            
+            session = await self.get_session()
+            async with session.post(
+                f"{sapi_url}/capital/withdraw/apply",
+                params=params,
+                headers={'X-MBX-APIKEY': self.api_key}
+            ) as response:
+                data = await response.json()
+                
+                if response.status == 200:
+                    print(f"✅ Binance Withdrawal Submitted: {amount} {asset} -> {address}")
+                    # Returns {'id': 'withdraw_id'}
+                    return True
+                else:
+                    print(f"❌ Withdrawal Failed: {data}")
+                    return False
+                    
+        except Exception as e:
+            print(f"❌ Withdrawal Exception: {e}")
+            return False

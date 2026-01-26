@@ -12,6 +12,7 @@ from core.paper_trader import PaperTrader
 from execution.manager import ExecutionManager  # NEW
 from core.fee_manager import FeeManager # NEW
 from core.basis_arb import BasisArbitrageEngine # NEW
+from core.rebalance_manager import RebalanceManager # NEW
 from core.logger import setup_logger
 
 class ArbitrageBot:
@@ -30,6 +31,7 @@ class ArbitrageBot:
         self.tri_engine = TriangularArbitrageEngine(self)
         self.funding_engine = FundingRateArbitrageEngine(self)
         self.basis_engine = BasisArbitrageEngine(self) # NEW
+        self.rebalancer = RebalanceManager(self) # NEW
         
     def load_config(self, config_file: str) -> Dict:
         """Load configuration from JSON file and merge with env vars"""
@@ -187,7 +189,7 @@ class ArbitrageBot:
                             funding_data = await exchange.get_funding_rates()
                             if not funding_data: continue
 
-                            funding_ops = self.funding_engine.find_opportunities(funding_data)
+                            funding_ops = self.funding_engine.find_opportunities(funding_data, exchange_name)
                             if funding_ops:
                                 self.logger.info(f"\n🔮 {exchange_name.upper()} FUNDING OPS (Top {min(3, len(funding_ops))})")
                                 self.logger.info("=" * 60)
@@ -231,6 +233,15 @@ class ArbitrageBot:
                                 self.logger.info("")
                     except Exception as e:
                         self.logger.error(f"⚠️ Basis Arb Error: {e}")
+                    except Exception as e:
+                        self.logger.error(f"⚠️ Basis Arb Error: {e}")
+
+                # --- PHASE 15: Inventory Rebalancer ---
+                # Check periodically (check_and_rebalance handles internal timer)
+                try:
+                    await self.rebalancer.check_and_rebalance()
+                except Exception as e:
+                    self.logger.error(f"⚠️ Rebalance Error: {e}")
                 
                 # Show performance every 10 cycles
                 if cycle_count % 10 == 0:

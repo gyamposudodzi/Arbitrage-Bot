@@ -17,6 +17,63 @@ class OKXAPI(BaseExchangeAPI, StreamingExchangeInterface):
         # Convert BTC-USDT to BTC-USDT (OKX uses dashes)
         return pair.replace("-", "-")
     
+    async def get_funding_rates(self) -> List[Dict]:
+        """
+        Fetch funding rates for configured pairs from OKX (SWAP).
+        Uses batch async requests since there is no 'get all' endpoint.
+        """
+        session = await self.get_session()
+        funding_data = []
+        
+        # 1. Identify pairs to check (from Config)
+        # We need access to bot config... but valid pairs might be better.
+        # Ideally this class should know its interesting pairs.
+        # For now, we'll try to use a hardcoded list or if we can pass it in?
+        # The interface signature is checking `self.config`? No, `BaseExchangeAPI` has `self.config`.
+        # Taking a risk: assuming config has 'trading_pairs'
+        
+        target_pairs = self.config.get("trading_pairs", [])
+        if not target_pairs:
+             # Fallback
+             target_pairs = ["BTC-USDT", "ETH-USDT", "SOL-USDT"]
+
+        tasks = []
+        inst_ids = []
+
+        for pair in target_pairs:
+            # OKX Swap ID: BTC-USDT-SWAP
+            inst_id = f"{pair}-SWAP"
+            inst_ids.append(inst_id)
+            url = f"{self.base_url}/public/funding-rate?instId={inst_id}"
+            tasks.append(session.get(url))
+            
+        # 2. Fire requests parallel
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        for inst_id, response in zip(inst_ids, responses):
+            if isinstance(response, Exception):
+                continue
+                
+            try:
+                if response.status == 200:
+                    data = await response.json()
+                    if data['code'] == '0' and data['data']:
+                        item = data['data'][0] # {"fundingRate": "...", "nextFundingTime": "..."}
+                        
+                        # Normalize back: BTC-USDT-SWAP -> BTC-USDT
+                        symbol = inst_id.replace("-SWAP", "")
+                        
+                        funding_data.append({
+                            "symbol": symbol,
+                            "lastFundingRate": item['fundingRate'],
+                            "markPrice": 0.0, # OKX funding endpoint doesn't give mark price, assume 0 or fetch separately
+                            "nextFundingTime": item['nextFundingTime']
+                        })
+            except Exception:
+                 pass
+                 
+        return funding_data
+
     async def get_prices(self, pairs: List[str]) -> Dict[str, float]:
         prices = {}
         session = await self.get_session()

@@ -17,6 +17,35 @@ class BybitAPI(BaseExchangeAPI, StreamingExchangeInterface):
         # Convert BTC-USDT to BTCUSDT
         return pair.replace("-", "")
     
+    async def get_funding_rates(self) -> List[Dict]:
+        """
+        Fetch real-time funding rates from Bybit V5 Linear (USDT Perps).
+        """
+        session = await self.get_session()
+        funding_data = []
+        try:
+            # Query Linear Tickers (USDT Perpetual)
+            url = f"{self.base_url}/v5/market/tickers?category=linear"
+            async with session.get(url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data['retCode'] == 0:
+                        for item in data['result']['list']:
+                            # Bybit returns: {"symbol": "BTCUSDT", "fundingRate": "0.0001", "nextFundingTime": "...", "markPrice": "..."}
+                            # Map to Standard Format required by FundingEngine
+                            funding_data.append({
+                                "symbol": item['symbol'], # Matches normalized format BTCUSDT
+                                "lastFundingRate": item['fundingRate'],
+                                "markPrice": item['markPrice'],
+                                "nextFundingTime": item['nextFundingTime']
+                            })
+                    else:
+                        print(f"Bybit funding error: {data['retMsg']}")
+        except Exception as e:
+            print(f"Bybit funding exception: {e}")
+            
+        return funding_data
+
     async def get_prices(self, pairs: List[str]) -> Dict[str, float]:
         prices = {}
         session = await self.get_session()
