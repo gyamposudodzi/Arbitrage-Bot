@@ -65,19 +65,26 @@ Edit `config.json` to control the bot:
 ```json
 {
   "execution_mode": "normal",  // Options: "normal" or "hft"
+  "order_type": "maker",       // Options: "maker" (Limit) or "taker" (Market)
   "trading_pairs": ["BTC-USDT", "ETH-USDT", ...],
   "exchanges": {
     "binance": { "enabled": true, "api_key": "...", "api_secret": "..." },
-    "coinbase": { "enabled": true, "api_key": "...", "api_secret": "..." }
     ...
   },
   "live_trading": {
     "enabled": true,
-    "max_trade_size": 100,      // Max $ per trade
+    "max_trade_size": 100,
     "daily_loss_limit": 50
   },
-  "paper_trading": {
-    "enabled": false            // Set true to simulate
+  "rebalance": {
+    "enabled": true,
+    "min_balance": 200,      // Withdraw if balance > target
+    "target_balance": 1000,
+    "allowed_assets": ["USDT"],
+    "deposit_addresses": {
+      "binance": {"USDT": "TRC20_ADDRESS"},
+      "kraken": {"USDT": "TRC20_ADDRESS"}
+    }
   }
 }
 ```
@@ -90,10 +97,10 @@ Edit `config.json` to control the bot:
 | :--- | :--- | :--- | :--- |
 | **Spot Arbitrage** | ✅ Live | All 7 | Requires funds on both sides for HFT. |
 | **Triangular Arb** | ✅ Live | All 7 | Profitability depends on low trading fees (BNB burn advised). |
-| **funding Arb** | ✅ Live | **Binance Only** | Other exchanges (Bybit/OKX) in roadmap. |
-| **Basis Arb** | ✅ Live | **Binance Only** | Only Binance has liquid Delivery Futures. |
-| **DEX (Uniswap)** | ⏳ Planned | None | Requires Web3.py integration. |
-| **Flash Loans** | ⏳ Planned | None | Aave/DyDx smart contracts required. |
+| **Funding Arb** | ✅ Live | **Binance, Bybit, KuCoin, OKX** | Delta-Neutral Strategy. |
+| **Basis Arb** | ✅ Live | **Binance Only** | Risk-Free Yield on Futures expiry. |
+| **Rebalancer** | ✅ Live | All 7 | Auto-withdraws & deposits to maintain inventory. |
+
 
 ---
 
