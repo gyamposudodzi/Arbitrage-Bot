@@ -281,6 +281,9 @@ class BinanceOrderExecutor(BaseOrderExecutor):
                 else:
                     return {}
         except Exception as e:
+            print(f"❌ Binance withdrawal info error: {e}")
+            return {}
+
     async def withdraw(self, asset: str, amount: float, address: str, network: str = None) -> bool:
         """
         Withdraw funds from Binance.

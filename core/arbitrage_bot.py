@@ -33,6 +33,9 @@ class ArbitrageBot:
         self.basis_engine = BasisArbitrageEngine(self) # NEW
         self.rebalancer = RebalanceManager(self) # NEW
         
+            
+
+        
     def load_config(self, config_file: str) -> Dict:
         """Load configuration from JSON file and merge with env vars"""
         config = {}
