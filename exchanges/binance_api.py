@@ -36,7 +36,7 @@ class BinanceAPI(BaseExchangeAPI, StreamingExchangeInterface):
             print(f"Binance pair fetch error: {e}")
         return supported
     
-    async def get_all_tickers(self) -> Dict[str, float]:
+    async def get_all_tickers(self) -> Dict[str, Dict[str, float]]:
         """Fetch all prices for Triangular Arbitrage"""
         prices = {}
         session = await self.get_session()
@@ -56,11 +56,17 @@ class BinanceAPI(BaseExchangeAPI, StreamingExchangeInterface):
                         for quote in ['USDT', 'BTC', 'ETH', 'BNB', 'FDUSD', 'USDC']:
                             if symbol.endswith(quote):
                                 base = symbol[:-len(quote)]
-                                prices[f"{base}-{quote}"] = float(item['bidPrice'])
+                                prices[f"{base}-{quote}"] = {
+                                    'bid': float(item['bidPrice']),
+                                    'ask': float(item['askPrice'])
+                                }
                                 quote_found = True
                                 break
                         if not quote_found:
-                            prices[symbol] = float(item['bidPrice'])
+                            prices[symbol] = {
+                                'bid': float(item['bidPrice']),
+                                'ask': float(item['askPrice'])
+                            }
         except Exception as e:
             print(f"Binance fetch error: {e}")
         return prices

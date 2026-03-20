@@ -10,6 +10,8 @@ load_dotenv()
 def create_config_template():
     """Create a configuration template file"""
     config = {
+        "execution_mode": "normal",
+        "order_type": "taker",
         "exchanges": {
             "binance": {
                 "enabled": True,
@@ -17,46 +19,43 @@ def create_config_template():
                 "api_secret": os.getenv('BINANCE_API_SECRET', '')
             },
             "coinbase": {
-                "enabled": True,
+                "enabled": False,
                 "api_key": os.getenv('COINBASE_API_KEY', ''),
                 "api_secret": os.getenv('COINBASE_API_SECRET', '')
             },
             "kraken": {
-                "enabled": True,
+                "enabled": False,
                 "api_key": os.getenv('KRAKEN_API_KEY', ''),
                 "api_secret": os.getenv('KRAKEN_API_SECRET', '')
             },
             "kucoin": {
-                "enabled": True,
+                "enabled": False,
                 "api_key": os.getenv('KUCOIN_API_KEY', ''),
                 "api_secret": os.getenv('KUCOIN_API_SECRET', ''),
                 "api_passphrase": os.getenv('KUCOIN_API_PASSPHRASE', '')
             },
             "bybit": {
-                "enabled": True,
+                "enabled": False,
                 "api_key": os.getenv('BYBIT_API_KEY', ''),
                 "api_secret": os.getenv('BYBIT_API_SECRET', '')
             },
             "okx": {
-                "enabled": True,
+                "enabled": False,
                 "api_key": os.getenv('OKX_API_KEY', ''),
                 "api_secret": os.getenv('OKX_API_SECRET', ''),
                 "api_passphrase": os.getenv('OKX_API_PASSPHRASE', '')
             },
             "gateio": {
-                "enabled": True,
+                "enabled": False,
                 "api_key": os.getenv('GATEIO_API_KEY', ''),
                 "api_secret": os.getenv('GATEIO_API_SECRET', '')
             }
         },
         "trading_pairs": [
-    
-            "BTC-USDT", 
+            "BTC-USDT",
             "ETH-USDT",
-            
-        
             "ADA-USDT",
-            "DOT-USDT", 
+            "DOT-USDT",
             "LINK-USDT",
             "SOL-USDT",
             "AVAX-USDT",
@@ -64,10 +63,8 @@ def create_config_template():
             "ATOM-USDT",
             "XRP-USDT",
             "DOGE-USDT",
-            
-        
             "NEAR-USDT",
-            "ALGO-USDT", 
+            "ALGO-USDT",
             "FTM-USDT",
             "SAND-USDT",
             "MANA-USDT",
@@ -76,8 +73,6 @@ def create_config_template():
             "BAT-USDT",
             "ONE-USDT",
             "VET-USDT",
-            
-            
             "GALA-USDT",
             "IMX-USDT",
             "RUNE-USDT",
@@ -90,8 +85,39 @@ def create_config_template():
             "SUI-USDT"
         ],
         "min_spread_percentage": 0.3,
+        "min_triangular_profit_percent": 0.0,
         "update_interval": 3,
-        "max_opportunities": 20
+        "max_opportunities": 20,
+        "paper_trading": {
+            "enabled": False,
+            "initial_balance": 1000,
+            "auto_trade_threshold": 0.3
+        },
+        "live_trading": {
+            "enabled": False,
+            "max_trade_size": 10,
+            "daily_loss_limit": 5,
+            "cooldown_seconds": 30,
+            "enable_spot_arbitrage": False,
+            "min_spot_profit_percent": 1.0,
+            "enable_triangular_arbitrage": True,
+            "min_triangular_profit_percent": 1.0,
+            "enable_funding_arbitrage": False,
+            "min_funding_apy": 25.0,
+            "manual_approval": True
+        },
+        "rebalance": {
+            "enabled": False,
+            "min_balance": 200,
+            "target_balance": 1000,
+            "check_interval": 300,
+            "allowed_assets": ["USDT"],
+            "deposit_addresses": {
+                "binance": {
+                    "USDT": "YOUR_TRC20_ADDRESS_HERE"
+                }
+            }
+        }
     }
     
     with open('config.json', 'w') as f:

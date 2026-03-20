@@ -133,4 +133,5 @@ Edit `config.json` to control the bot:
 ---
 
 ## ⚠️ Disclaimer
+
 This software is for **educational purposes**. High-Frequency Trading (HFT) involves significant risks including API rate limits, network latency, and execution slippage. Never trade money you cannot afford to lose. Use "Paper Trading" mode first!

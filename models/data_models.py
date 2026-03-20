@@ -25,11 +25,14 @@ class TriangularOpportunity:
     """
     exchange: str
     path: List[str]
+    pairs: List[str]   # Trading pair used on each leg
     rates: List[float]  # Exchange rates for each step
     actions: List[str]  # 'BUY' or 'SELL' for each step
     initial_amount: float
     final_amount: float
     profit: float
+    gross_profit_percentage: float
+    estimated_fee_percentage: float
     profit_percentage: float
     timestamp: float
 

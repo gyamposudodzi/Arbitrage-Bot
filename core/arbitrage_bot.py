@@ -169,8 +169,21 @@ class ArbitrageBot:
                     
                     if self.executor.is_live:
                          best_opportunity = verified_opportunities[0]
-                         if best_opportunity.actual_profit_percentage >= 0.3:
+                         live_spot_enabled = self.config.get("live_trading", {}).get("enable_spot_arbitrage", False)
+                         live_spot_min_profit = self.config.get("live_trading", {}).get("min_spot_profit_percent", 1.0)
+                         if (
+                             live_spot_enabled
+                             and best_opportunity.actual_profit_percentage >= live_spot_min_profit
+                             and self.executor.can_execute_strategy("spot_arbitrage")
+                         ):
+                             self.executor.mark_strategy_execution("spot_arbitrage")
                              await self.executor.execute_trade(best_opportunity, manual_approval=True)
+                         elif live_spot_enabled and best_opportunity.actual_profit_percentage < live_spot_min_profit:
+                             self.logger.info(
+                                 f"   ⏭️ Skipping live spot arbitrage: best net profit "
+                                 f"{best_opportunity.actual_profit_percentage:.2f}% below live threshold "
+                                 f"{live_spot_min_profit:.2f}%"
+                             )
                 else:
                     await self.display_opportunities(opportunities)
                 
@@ -203,10 +216,22 @@ class ArbitrageBot:
                                 self.logger.info("")
                                 
                                 # EXECUTING FUNDING ARB (If Live)
-                                if self.executor.is_live:
+                                if (
+                                    self.executor.is_live
+                                    and self.config.get("live_trading", {}).get("enable_funding_arbitrage", False)
+                                    and self.executor.can_execute_strategy("funding_arbitrage")
+                                ):
                                     best_opp = funding_ops[0]
-                                    if best_opp.annualized_rate > 15.0:
+                                    min_funding_apy = self.config.get("live_trading", {}).get("min_funding_apy", 25.0)
+                                    if best_opp.annualized_rate >= min_funding_apy:
+                                        self.executor.mark_strategy_execution("funding_arbitrage")
                                         await self.executor.execute_funding_trade(best_opp, manual_approval=True)
+                                    else:
+                                        self.logger.info(
+                                            f"   ⏭️ Skipping live funding arbitrage: best APY "
+                                            f"{best_opp.annualized_rate:.2f}% below live threshold "
+                                            f"{min_funding_apy:.2f}%"
+                                        )
                         except Exception as e:
                             self.logger.error(f"⚠️ {exchange_name} Funding Error: {e}")
 
@@ -276,13 +301,32 @@ class ArbitrageBot:
                             for i, op in enumerate(tri_ops[:3], 1):
                                 path_str = " -> ".join(op.path)
                                 self.logger.info(f"{i}. 🔄 Path  : {path_str}")
-                                self.logger.info(f"   💰 Profit: {op.profit_percentage:>6.2f}%")
+                                self.logger.info(f"   💰 Net Profit: {op.profit_percentage:>6.2f}%")
+                                self.logger.info(f"   📊 Gross: {op.gross_profit_percentage:>6.2f}% | Fees: {op.estimated_fee_percentage:>4.2f}%")
                                 self.logger.info("   " + "-" * 56)
                                 
                                 if op.profit_percentage > 1.0:
                                     self.db.log_triangular_trade(op)
                                     self.logger.info("   💾 Logged to DB")
                             self.logger.info("")
+
+                            if self.executor.is_live and exchange_name == "binance":
+                                best_tri_opp = tri_ops[0]
+                                live_tri_min_profit = self.config.get("live_trading", {}).get("min_triangular_profit_percent", 1.0)
+                                live_tri_enabled = self.config.get("live_trading", {}).get("enable_triangular_arbitrage", True)
+                                if (
+                                    live_tri_enabled
+                                    and best_tri_opp.profit_percentage >= live_tri_min_profit
+                                    and self.executor.can_execute_strategy("triangular_arbitrage")
+                                ):
+                                    self.executor.mark_strategy_execution("triangular_arbitrage")
+                                    await self.executor.execute_triangular_trade(best_tri_opp, manual_approval=True)
+                                elif live_tri_enabled:
+                                    self.logger.info(
+                                        f"   ⏭️ Skipping live triangular trade: best net profit "
+                                        f"{best_tri_opp.profit_percentage:.2f}% below live threshold "
+                                        f"{live_tri_min_profit:.2f}%"
+                                    )
                     except Exception as e:
                         print(f"⚠️ {exchange_name} Triangular Error: {e}")
 

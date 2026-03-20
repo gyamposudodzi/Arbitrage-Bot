@@ -3,6 +3,7 @@ import aiohttp
 import time
 import hmac
 import hashlib
+import socket
 from typing import Dict, Optional
 
 class BaseOrderExecutor(abc.ABC):
@@ -16,7 +17,19 @@ class BaseOrderExecutor(abc.ABC):
     
     async def get_session(self) -> aiohttp.ClientSession:
         if not self.session:
-            self.session = aiohttp.ClientSession()
+            resolver = aiohttp.ThreadedResolver()
+            timeout = aiohttp.ClientTimeout(
+                total=20,
+                connect=10,
+                sock_connect=10,
+                sock_read=20
+            )
+            connector = aiohttp.TCPConnector(
+                resolver=resolver,
+                family=socket.AF_INET,
+                ttl_dns_cache=300
+            )
+            self.session = aiohttp.ClientSession(timeout=timeout, connector=connector)
         return self.session
     
     async def close_session(self):

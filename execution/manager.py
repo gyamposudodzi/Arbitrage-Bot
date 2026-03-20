@@ -2,7 +2,7 @@ import asyncio
 import time
 import json
 from typing import Dict, Optional, List
-from models.data_models import ArbitrageOpportunity, FundingOpportunity
+from models.data_models import ArbitrageOpportunity, FundingOpportunity, TriangularOpportunity
 
 # Import the order executors
 from .binance_executor import BinanceOrderExecutor
@@ -17,15 +17,33 @@ class ExecutionManager:
     def __init__(self, bot):
         self.bot = bot
         self.trade_history = []
-        self.is_live = False
-        self.max_trade_size = 100  # $100 max per trade to start
-        self.daily_loss_limit = 50  # $50 max daily loss
+        live_config = bot.config.get("live_trading", {})
+        self.is_live = live_config.get("enabled", False)
+        self.max_trade_size = live_config.get("max_trade_size", 100)
+        self.daily_loss_limit = live_config.get("daily_loss_limit", 50)
+        self.cooldown_seconds = live_config.get("cooldown_seconds", 30)
         self.total_pnl = 0.0
+        self.strategy_last_run = {}
         
         # Initialize order executors
         self.executors = {}
         self.balances = {} # Cache: {'binance': 1000.0, ...}
         self._setup_executors()
+
+    def can_execute_strategy(self, strategy_name: str) -> bool:
+        """Prevent repeated live executions too close together."""
+        if not self.is_live:
+            return False
+
+        last_run = self.strategy_last_run.get(strategy_name)
+        if last_run is None:
+            return True
+
+        elapsed = time.time() - last_run
+        return elapsed >= self.cooldown_seconds
+
+    def mark_strategy_execution(self, strategy_name: str) -> None:
+        self.strategy_last_run[strategy_name] = time.time()
     
     async def refresh_balances(self):
         """Update cached USDT balances for all exchanges"""
@@ -450,6 +468,190 @@ class ExecutionManager:
         except Exception as e:
             print(f"❌ Funding Execution Exception: {e}")
             return False
+
+    async def execute_triangular_trade(self, opportunity: TriangularOpportunity, manual_approval: bool = True) -> bool:
+        """
+        Execute a triangular arbitrage trade on Binance using sequential market orders.
+        Path example: USDT -> BTC -> ETH -> USDT
+        """
+        if not self.is_live:
+            print("❌ Live trading disabled.")
+            return False
+
+        if opportunity.exchange != "binance":
+            print(f"❌ Triangular execution currently supports Binance only (got {opportunity.exchange})")
+            return False
+
+        executor = self.executors.get("binance")
+        if not executor:
+            print("❌ Binance executor not available")
+            return False
+
+        await self.refresh_balances()
+        usdt_balance = self.balances.get("binance", 0.0)
+        if usdt_balance < 10.0:
+            print(f"❌ Insufficient Binance USDT balance for triangular trade (${usdt_balance:.2f})")
+            return False
+
+        starting_usdt_balance = usdt_balance
+        start_amount = min(self.max_trade_size, usdt_balance * 0.95)
+        if start_amount <= 0:
+            print("❌ Invalid triangular trade size.")
+            return False
+
+        print(f"🔺 EXECUTING TRIANGULAR ARB ON BINANCE: {' -> '.join(opportunity.path)}")
+        print(f"   Starting capital: ${start_amount:.2f} USDT")
+
+        current_amount = start_amount
+        leg_records = []
+        current_asset = opportunity.path[0]
+        balance_buffer = 0.995
+        trade_assets = [asset for asset in dict.fromkeys(opportunity.path) if asset != "USDT"]
+
+        try:
+            for index, (pair, action, rate) in enumerate(zip(opportunity.pairs, opportunity.actions, opportunity.rates), 1):
+                symbol = self.bot.exchanges["binance"].normalize_pair(pair)
+                from_asset = opportunity.path[index - 1]
+                to_asset = opportunity.path[index]
+                current_asset = from_asset
+
+                if action == "BUY":
+                    if rate <= 0:
+                        print(f"❌ Invalid rate for leg {index}: {pair}")
+                        return False
+
+                    spend_amount = current_amount
+                    print(f"   Leg {index}: BUY {to_asset} with {from_asset} via {pair} (spend ~ {spend_amount:.8f} {from_asset})")
+                    result = await executor.place_market_order(symbol, 'buy', quote_order_qty=spend_amount)
+
+                    if not result.get('success'):
+                        await self._cleanup_triangular_assets(executor, trade_assets)
+                        print(f"❌ Triangular leg {index} failed: {result.get('error')}")
+                        return False
+
+                    actual_balance = await executor.get_balance(to_asset)
+                    executed_quantity = float(result.get('net_executed_quantity', result.get('executed_quantity', 0)))
+                    current_amount = min(executed_quantity, actual_balance) * balance_buffer
+                    current_asset = to_asset
+                    leg_records.append({
+                        'leg': index,
+                        'pair': pair,
+                        'action': action,
+                        'from_asset': from_asset,
+                        'to_asset': to_asset,
+                        'spent_amount': spend_amount,
+                        'executed_quantity': executed_quantity,
+                        'available_balance': actual_balance,
+                        'order_id': result.get('order_id')
+                    })
+                else:
+                    quantity = current_amount
+                    print(f"   Leg {index}: SELL {from_asset} for {to_asset} via {pair} (qty ~ {quantity:.8f})")
+                    result = await executor.place_market_order(symbol, 'sell', quantity)
+
+                    if not result.get('success'):
+                        await self._cleanup_triangular_assets(executor, trade_assets)
+                        print(f"❌ Triangular leg {index} failed: {result.get('error')}")
+                        return False
+
+                    quote_qty = float(result.get('net_cummulative_quote_qty', result.get('cummulative_quote_qty', 0)))
+                    if quote_qty > 0:
+                        current_amount = quote_qty
+                    else:
+                        current_amount = quantity * rate
+                    current_asset = to_asset
+
+                    leg_records.append({
+                        'leg': index,
+                        'pair': pair,
+                        'action': action,
+                        'from_asset': from_asset,
+                        'to_asset': to_asset,
+                        'executed_quantity': quantity,
+                        'received_amount': current_amount,
+                        'order_id': result.get('order_id')
+                    })
+
+            ending_usdt_balance = await executor.get_balance("USDT")
+            realized_profit = ending_usdt_balance - starting_usdt_balance
+            sequence_return = current_amount - start_amount
+            self.total_pnl += realized_profit
+            self.trade_history.append({
+                'timestamp': time.time(),
+                'type': 'TRIANGULAR_ARB',
+                'exchange': opportunity.exchange,
+                'path': opportunity.path,
+                'pairs': opportunity.pairs,
+                'start_amount': start_amount,
+                'final_amount': current_amount,
+                'realized_usdt_balance_before': starting_usdt_balance,
+                'realized_usdt_balance_after': ending_usdt_balance,
+                'profit': realized_profit,
+                'profit_percentage': (realized_profit / start_amount) * 100 if start_amount else 0.0,
+                'sequence_return_estimate': sequence_return,
+                'legs': leg_records
+            })
+
+            if realized_profit > 0:
+                print(f"✅ TRIANGULAR TRADE COMPLETE! Final USDT from route: ${current_amount:.4f} | Realized P&L: ${realized_profit:.4f}")
+            else:
+                print(f"⚠️ TRIANGULAR ROUTE FILLED BUT LOST MONEY. Final USDT from route: ${current_amount:.4f} | Realized P&L: ${realized_profit:.4f}")
+            return True
+
+        except Exception as e:
+            await self._cleanup_triangular_assets(executor, trade_assets)
+            print(f"❌ Triangular execution exception: {e}")
+            return False
+
+    async def _attempt_triangular_unwind(self, executor, asset: str, amount: float) -> None:
+        """Best-effort unwind back into USDT if a later triangular leg fails."""
+        if not asset or asset == "USDT" or amount <= 0:
+            return
+
+        unwind_pair = f"{asset}-USDT"
+        exchange = self.bot.exchanges.get("binance")
+        if not exchange:
+            return
+
+        try:
+            if hasattr(executor, 'convert_asset'):
+                print(f"⚠️ Attempting convert unwind: {amount:.8f} {asset} -> USDT")
+                convert_result = await executor.convert_asset(asset, "USDT", amount)
+                if convert_result.get('success'):
+                    print("✅ Convert unwind submitted.")
+                    return
+                print(f"⚠️ Convert unwind unavailable/failed: {convert_result.get('error')}")
+
+            symbol = exchange.normalize_pair(unwind_pair)
+            print(f"⚠️ Attempting emergency unwind: SELL {amount:.8f} {asset} via {unwind_pair}")
+            unwind_result = await executor.place_market_order(symbol, 'sell', amount)
+            if unwind_result.get('success'):
+                print("✅ Emergency unwind submitted.")
+            else:
+                print(f"❌ Emergency unwind failed: {unwind_result.get('error')}")
+        except Exception as exc:
+            print(f"❌ Emergency unwind exception: {exc}")
+
+    async def _cleanup_triangular_assets(self, executor, assets: List[str]) -> None:
+        """Try to liquidate leftover non-USDT triangular assets back to USDT."""
+        cleaned = set()
+        for asset in assets:
+            asset = asset.upper()
+            if asset in cleaned or asset == "USDT":
+                continue
+            cleaned.add(asset)
+
+            try:
+                balance = await executor.get_balance(asset)
+            except Exception as exc:
+                print(f"❌ Could not fetch cleanup balance for {asset}: {exc}")
+                continue
+
+            if balance <= 0:
+                continue
+
+            print(f"⚠️ Cleanup check: {asset} balance = {balance:.8f}")
+            await self._attempt_triangular_unwind(executor, asset, balance * 0.995)
 
     async def cleanup(self):
         """Clean up order executor sessions"""
